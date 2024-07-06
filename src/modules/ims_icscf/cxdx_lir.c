@@ -263,6 +263,7 @@ int cxdx_send_lir(struct sip_msg *msg, str public_identity,
 
 	AAAMessage *lir = 0;
 	AAASession *session = 0;
+	str *correlationID = NULL;
 
 
 	session = cdpb.AAACreateSession(0);
@@ -284,12 +285,18 @@ int cxdx_send_lir(struct sip_msg *msg, str public_identity,
 	if(!cxdx_add_public_identity(lir, public_identity))
 		goto error1;
 
+	if((NULL != msg) && (FAKED_REPLY != msg) && (NULL != msg->callid)) {
+        correlationID = &msg->callid->body;
+    } else {
+        correlationID = NULL;
+    }
+
 	if(cxdx_forced_peer.len)
 		cdpb.AAASendMessageToPeer(lir, &cxdx_forced_peer,
-				(void *)async_cdp_lir_callback, (void *)transaction_data);
+				(void *)async_cdp_lir_callback, (void *)transaction_data, correlationID);
 	else
 		cdpb.AAASendMessage(
-				lir, (void *)async_cdp_lir_callback, (void *)transaction_data);
+				lir, (void *)async_cdp_lir_callback, (void *)transaction_data, correlationID);
 
 	LM_DBG("Successfully sent async diameter\n");
 

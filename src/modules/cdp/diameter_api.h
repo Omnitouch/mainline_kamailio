@@ -159,22 +159,22 @@ typedef int (*AAAAddResponseHandler_f)(AAAResponseHandler_f *f, void *param);
 /* MESSAGE SENDING */
 
 AAAReturnCode AAASendMessage(AAAMessage *message,
-		AAATransactionCallback_f *callback_f, void *callback_param);
+		AAATransactionCallback_f *callback_f, void *callback_param, str *correlationID);
 typedef AAAReturnCode (*AAASendMessage_f)(AAAMessage *message,
-		AAATransactionCallback_f *callback_f, void *callback_param);
+		AAATransactionCallback_f *callback_f, void *callback_param, str *correlationID);
 
 AAAReturnCode AAASendMessageToPeer(AAAMessage *message, str *peer_id,
-		AAATransactionCallback_f *callback_f, void *callback_param);
+		AAATransactionCallback_f *callback_f, void *callback_param, str *correlationID);
 typedef AAAReturnCode (*AAASendMessageToPeer_f)(AAAMessage *message,
 		str *peer_id, AAATransactionCallback_f *callback_f,
-		void *callback_param);
+		void *callback_param, str *correlationID);
 
-AAAMessage *AAASendRecvMessage(AAAMessage *msg);
-typedef AAAMessage *(*AAASendRecvMessage_f)(AAAMessage *msg);
+AAAMessage *AAASendRecvMessage(AAAMessage *msg, str *correlationID);
+typedef AAAMessage *(*AAASendRecvMessage_f)(AAAMessage *msg, str *correlationID);
 
-AAAMessage *AAASendRecvMessageToPeer(AAAMessage *msg, str *peer_id);
+AAAMessage *AAASendRecvMessageToPeer(AAAMessage *msg, str *peer_id, str *correlationID);
 typedef AAAMessage *(*AAASendRecvMessageToPeer_f)(
-		AAAMessage *msg, str *peer_id);
+		AAAMessage *msg, str *peer_id, str *correlationID);
 
 AAAReturnCode AAAFreeMessage(AAAMessage **message);
 typedef AAAReturnCode (*AAAFreeMessage_f)(AAAMessage **message);

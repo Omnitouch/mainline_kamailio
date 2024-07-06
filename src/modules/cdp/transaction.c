@@ -99,7 +99,7 @@ int cdp_trans_destroy()
  * @returns the created cdp_trans_t* or NULL on error
  */
 cdp_trans_t *cdp_add_trans(AAAMessage *msg, AAATransactionCallback_f *cb,
-		void *ptr, int timeout, int auto_drop)
+		void *ptr, int timeout, int auto_drop, str *correlationID)
 {
 	cdp_trans_t *x;
 	x = shm_malloc(sizeof(cdp_trans_t));
@@ -122,6 +122,7 @@ cdp_trans_t *cdp_add_trans(AAAMessage *msg, AAATransactionCallback_f *cb,
 	x->expires = timeout + time(0);
 	x->auto_drop = auto_drop;
 	x->next = 0;
+	if (correlationID) strncpy(x->correlationID, correlationID->s, MAX_CORRELATION_ID_SZ - 1);
 
 	lock_get(trans_list->lock);
 	x->prev = trans_list->tail;

@@ -300,6 +300,7 @@ int cxdx_send_uar(struct sip_msg *msg, str private_identity,
 {
 	AAAMessage *uar = 0;
 	AAASession *session = 0;
+	str *correlationID = NULL;
 
 	session = cdpb.AAACreateSession(0);
 
@@ -331,12 +332,18 @@ int cxdx_send_uar(struct sip_msg *msg, str private_identity,
 		if(!cxdx_add_authorization_type(uar, authorization_type))
 			goto error1;
 
+	if((NULL != msg) && (FAKED_REPLY != msg) && (NULL != msg->callid)) {
+        correlationID = &msg->callid->body;
+    } else {
+        correlationID = NULL;
+    }
+
 	if(cxdx_forced_peer.len)
 		cdpb.AAASendMessageToPeer(uar, &cxdx_forced_peer,
-				(void *)async_cdp_uar_callback, (void *)transaction_data);
+				(void *)async_cdp_uar_callback, (void *)transaction_data, correlationID);
 	else
 		cdpb.AAASendMessage(
-				uar, (void *)async_cdp_uar_callback, (void *)transaction_data);
+				uar, (void *)async_cdp_uar_callback, (void *)transaction_data, correlationID);
 
 	LM_DBG("Successfully sent async diameter\n");
 

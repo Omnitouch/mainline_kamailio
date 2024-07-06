@@ -825,7 +825,7 @@ void Send_ASA(cdp_session_t *s, AAAMessage *msg)
 		AAACreateAndAddAVPToMessage(
 				asa, AVP_Result_Code, AAA_AVP_FLAG_MANDATORY, 0, x, 4);
 
-		AAASendMessage(asa, 0, 0);
+		AAASendMessage(asa, 0, 0, 0);
 	} else {
 		// send... many cases... maybe not needed.
 		// for now we do the same
@@ -852,7 +852,7 @@ void Send_ASA(cdp_session_t *s, AAAMessage *msg)
 			} else {
 				LM_INFO("success sending ASA\n");
 			}
-		} else if(!AAASendMessage(asa, 0, 0)) {
+		} else if(!AAASendMessage(asa, 0, 0, 0)) {
 			LM_ERR("Send_ASA() : error sending ASA\n");
 		}
 	}

@@ -46,6 +46,8 @@
 #include "receiver.h"
 #include "peerstatemachine.h"
 #include "cdp_stats.h"
+#include "../../modules/siptrace/siptrace_data.h"
+#include "../../core/sr_module.h"
 
 extern unsigned int *latency_threshold_p; /**<max delay for Diameter call */
 extern struct cdp_counters_h cdp_cnts_h;
@@ -101,6 +103,16 @@ int api_callback(peer *p, AAAMessage *msg, void *ptr)
 		/* take care of transactional callback if any */
 		t = cdp_take_trans(msg);
 		if(t) {
+			hlog_diam_fn hlog_diam = (hlog_diam_fn)find_export("hlog_diam", NO_SCRIPT, 0);
+			if (NULL != hlog_diam) {
+				str callid = {
+					.s = t->correlationID,
+					.len = strlen(t->correlationID)
+				};
+				int hlog_diam_res = hlog_diam(msg, &callid);
+				LM_DBG("hlog_diam res = %i", hlog_diam_res);
+			}
+
 			t->ans = msg;
 			struct timeval stop;
 			gettimeofday(&stop, NULL);

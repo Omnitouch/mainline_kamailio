@@ -49,6 +49,8 @@
 #include "diameter.h"
 #include "diameter_api.h"
 
+#define MAX_CORRELATION_ID_SZ 128
+
 /** Diameter Transaction representation */
 typedef struct _cdp_trans_t
 {
@@ -57,6 +59,7 @@ typedef struct _cdp_trans_t
 	AAAMsgIdentifier endtoendid;  /**< End-to-end id of the messages */
 	AAAMsgIdentifier hopbyhopid;  /**< Hop-by-hop id of the messages */
 	AAATransactionCallback_f *cb; /**< transactional callback function */
+	char correlationID[MAX_CORRELATION_ID_SZ]; /**< copy of the correlationID for hlog-ing the diameter answer */
 	void **ptr;		 /**< generic pointer to pass to the callback */
 	AAAMessage *ans; /**< answer for the transaction */
 	time_t expires; /**< time of expiration, when a time-out event will happen */
@@ -78,7 +81,7 @@ int cdp_trans_init();
 int cdp_trans_destroy();
 
 cdp_trans_t *cdp_add_trans(AAAMessage *msg, AAATransactionCallback_f *cb,
-		void *ptr, int timeout, int auto_drop);
+		void *ptr, int timeout, int auto_drop, str *correlationID);
 void del_trans(AAAMessage *msg);
 cdp_trans_t *cdp_take_trans(AAAMessage *msg);
 void cdp_free_trans(cdp_trans_t *x);

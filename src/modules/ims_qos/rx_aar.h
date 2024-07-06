@@ -110,7 +110,7 @@ int rx_send_aar(struct sip_msg *req, struct sip_msg *res, AAASession *auth,
 		char *direction, saved_transaction_t *saved_t_data);
 
 //send AAR to remove video after failed AAR update that added video
-int rx_send_aar_update_no_video(AAASession *auth);
+int rx_send_aar_update_no_video(AAASession *auth, str *callid);
 
 
 //TODOD remove - no longer user AOR parm

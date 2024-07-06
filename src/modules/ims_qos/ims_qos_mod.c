@@ -493,12 +493,18 @@ void callback_dialog(
 	int current_has_video = 0;
 	int new_has_video = 0;
 	int must_unlock_aaa = 1;
+	str *callid = NULL;
 
 	if(rx_session_id == 0) {
 		LM_WARN("Strange... no rx session ID in callback.... why?\n");
 		return;
 	}
 	//getting session data
+
+	if((NULL != msg) && (FAKED_REPLY != msg) && (NULL != msg->callid))
+	{
+		callid = &msg->callid->body;
+	}
 
 	LM_DBG("Dialog callback of type %d received\n", type);
 
@@ -512,7 +518,7 @@ void callback_dialog(
 				rx_session_id->len, rx_session_id->s);
 
 		LM_DBG("Sending STR\n");
-		rx_send_str(rx_session_id);
+		rx_send_str(rx_session_id, callid);
 	} else if(type == DLGCB_CONFIRMED) {
 
 		LM_DBG("Callback for confirmed dialog - copy new flow description into "
@@ -640,7 +646,7 @@ void callback_dialog(
 							   "and it failed further upstream - "
 							   "so we must remove the video\n");
 						//We need to send AAR asynchronously with current fd
-						rx_send_aar_update_no_video(auth);
+						rx_send_aar_update_no_video(auth, callid);
 						must_unlock_aaa = 0;
 					}
 					//free the new flow description
@@ -683,7 +689,7 @@ void callback_pcscf_contact_cb(struct pcontact *c, int type, void *param)
 				   "for signalling bearer with  with Rx session ID: [%.*s]\n",
 					c->reg_state, c->rx_session_id.len, c->rx_session_id.s);
 			LM_DBG("Sending STR\n");
-			rx_send_str(&c->rx_session_id);
+			rx_send_str(&c->rx_session_id, &c->callid);
 		}
 	}
 }

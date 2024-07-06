@@ -842,9 +842,9 @@ void send_ccr_interim(
 
 	if(ro_forced_peer.len > 0) {
 		ret = cdpb.AAASendMessageToPeer(
-				ccr, &ro_forced_peer, resume_on_interim_ccr, (void *)i_req);
+				ccr, &ro_forced_peer, resume_on_interim_ccr, (void *)i_req, &ro_session->callid);
 	} else {
-		ret = cdpb.AAASendMessage(ccr, resume_on_interim_ccr, (void *)i_req);
+		ret = cdpb.AAASendMessage(ccr, resume_on_interim_ccr, (void *)i_req, &ro_session->callid);
 	}
 
 	if(ret != 1) {
@@ -1176,9 +1176,9 @@ void send_ccr_stop_with_param(
 
 	if(ro_forced_peer.len > 0) {
 		ret = cdpb.AAASendMessageToPeer(
-				ccr, &ro_forced_peer, resume_on_termination_ccr, NULL);
+				ccr, &ro_forced_peer, resume_on_termination_ccr, NULL,  &ro_session->callid);
 	} else {
-		ret = cdpb.AAASendMessage(ccr, resume_on_termination_ccr, NULL);
+		ret = cdpb.AAASendMessage(ccr, resume_on_termination_ccr, NULL,  &ro_session->callid);
 	}
 
 	if(ret != 1) {
@@ -1294,6 +1294,8 @@ int Ro_Send_CCR(struct sip_msg *msg, struct dlg_cell *dlg, int dir,
 	int active_rating_group;
 
 	int sdp_stream_num = 0;
+
+	str *correlationID = NULL;
 
 	LM_DBG("Sending initial CCR request (%c) for reservation_units [%d] "
 		   "incoming_trunk_id [%.*s] outgoing_trunk_id [%.*s]\n",
@@ -1501,14 +1503,20 @@ int Ro_Send_CCR(struct sip_msg *msg, struct dlg_cell *dlg, int dir,
 	//    new_session->ccr_sent = 1;      //assume we will send successfully
 	cdpb.AAASessionsUnlock(cc_acc_session->hash);
 
+	if((NULL != msg) && (FAKED_REPLY != msg) && (NULL != msg->callid)) {
+        correlationID = &msg->callid->body;
+    } else {
+        correlationID = NULL;
+    }
+
 	if(ro_forced_peer.len > 0) {
 		LM_DBG("Sending message with Peer\n");
 		ret = cdpb.AAASendMessageToPeer(
-				ccr, &ro_forced_peer, resume_on_initial_ccr, (void *)ssd);
+				ccr, &ro_forced_peer, resume_on_initial_ccr, (void *)ssd, correlationID);
 	} else {
 		LM_DBG("Sending message without Peer and realm is [%.*s]\n",
 				ccr->dest_realm->data.len, ccr->dest_realm->data.s);
-		ret = cdpb.AAASendMessage(ccr, resume_on_initial_ccr, (void *)ssd);
+		ret = cdpb.AAASendMessage(ccr, resume_on_initial_ccr, (void *)ssd, correlationID);
 	}
 
 	if(ret != 1) {

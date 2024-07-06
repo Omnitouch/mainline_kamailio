@@ -61,7 +61,7 @@
 
 extern str IMS_Serv_AVP_val;
 
-int rx_send_str(str *rx_session_id)
+int rx_send_str(str *rx_session_id, str *callid)
 {
 
 
@@ -161,9 +161,9 @@ int rx_send_str(str *rx_session_id)
 
 	LM_DBG("sending STR to PCRF\n");
 	if(rx_forced_peer.len)
-		cdpb.AAASendMessageToPeer(str, &rx_forced_peer, NULL, NULL);
+		cdpb.AAASendMessageToPeer(str, &rx_forced_peer, NULL, NULL, callid);
 	else
-		cdpb.AAASendMessage(str, NULL, NULL);
+		cdpb.AAASendMessage(str, NULL, NULL, callid);
 
 	LM_DBG("Successfully sent Rx STR for session: [%.*s]\n", rx_session_id->len,
 			rx_session_id->s);

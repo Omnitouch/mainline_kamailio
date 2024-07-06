@@ -55,7 +55,7 @@
 extern str rx_dest_realm;
 extern str rx_forced_peer;
 
-int rx_send_str(str *rx_session_id);
+int rx_send_str(str *rx_session_id, str *callid);
 
 
 #endif

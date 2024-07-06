@@ -50,6 +50,8 @@
 #include "routing.h"
 #include "peerstatemachine.h"
 #include "globals.h"
+#include "../../modules/siptrace/siptrace_data.h"
+#include "../../core/sr_module.h"
 
 extern dp_config *config; /**< Configuration for this diameter peer 	*/
 extern unsigned int *latency_threshold_p; /**<max delay for Diameter call */
@@ -57,6 +59,8 @@ extern unsigned int *latency_threshold_p; /**<max delay for Diameter call */
 /* CALLBACKS */
 extern handler_list *handlers;	  /**< list of handlers */
 extern gen_lock_t *handlers_lock; /**< lock for list of handlers */
+
+static void hlog_message(AAAMessage *message, str* correlationID);
 
 /**
  * Add a handler function for incoming requests.
@@ -130,7 +134,7 @@ int AAAAddResponseHandler(AAAResponseHandler_f *f, void *param)
  * \todo remove peer_id and add Realm routing
  */
 AAAReturnCode AAASendMessage(AAAMessage *message,
-		AAATransactionCallback_f *callback_f, void *callback_param)
+		AAATransactionCallback_f *callback_f, void *callback_param, str *correlationID)
 {
 	cdp_session_t *cdp_session;
 	peer *p;
@@ -156,11 +160,13 @@ AAAReturnCode AAASendMessage(AAAMessage *message,
 	if(callback_f) {
 		if(is_req(message))
 			cdp_add_trans(message, callback_f, callback_param,
-					config->transaction_timeout, 1);
+					config->transaction_timeout, 1, correlationID);
 		else
 			LM_ERR("AAASendMessage(): can't add transaction callback for "
 				   "answer.\n");
 	}
+
+	hlog_message(message, correlationID);
 
 	//	if (!peer_send_msg(p,message))
 	if(!sm_process(p, Send_Message, message, 0, 0))
@@ -183,7 +189,7 @@ error:
  * \todo remove peer_id and add Realm routing
  */
 AAAReturnCode AAASendMessageToPeer(AAAMessage *message, str *peer_id,
-		AAATransactionCallback_f *callback_f, void *callback_param)
+		AAATransactionCallback_f *callback_f, void *callback_param, str *correlationID)
 {
 	peer *p;
 	p = get_peer_by_fqdn(peer_id);
@@ -201,11 +207,13 @@ AAAReturnCode AAASendMessageToPeer(AAAMessage *message, str *peer_id,
 	if(callback_f) {
 		if(is_req(message))
 			cdp_add_trans(message, callback_f, callback_param,
-					config->transaction_timeout, 1);
+					config->transaction_timeout, 1, correlationID);
 		else
 			LM_ERR("AAASendMessageToPeer(): can't add transaction callback for "
 				   "answer.\n");
 	}
+
+	hlog_message(message, correlationID);
 
 	p->last_selected = time(NULL);
 	if(!sm_process(p, Send_Message, message, 0, 0))
@@ -247,7 +255,7 @@ void sendrecv_cb(
  * \todo remove peer_id and add Realm routing
  * \todo replace the busy-waiting lock in here with one that does not consume CPU
  */
-AAAMessage *AAASendRecvMessage(AAAMessage *message)
+AAAMessage *AAASendRecvMessage(AAAMessage *message, str *correlationID)
 {
 	peer *p;
 	gen_sem_t *sem = 0;
@@ -278,7 +286,9 @@ AAAMessage *AAASendRecvMessage(AAAMessage *message)
 	if(is_req(message)) {
 		sem_new(sem, 0);
 		t = cdp_add_trans(message, sendrecv_cb, (void *)sem,
-				config->transaction_timeout, 0);
+				config->transaction_timeout, 0, correlationID);
+
+		hlog_message(message, correlationID);
 
 		if(!sm_process(p, Send_Message, message, 0, 0)) {
 			sem_free(sem);
@@ -304,6 +314,7 @@ AAAMessage *AAASendRecvMessage(AAAMessage *message)
 					*latency_threshold_p, elapsed_millis);
 		}
 		ans = t->ans;
+		hlog_message(ans, correlationID);
 		cdp_free_trans(t);
 		return ans;
 	} else {
@@ -327,7 +338,7 @@ out_of_memory:
  * \todo remove peer_id and add Realm routing
  * \todo replace the busy-waiting lock in here with one that does not consume CPU
  */
-AAAMessage *AAASendRecvMessageToPeer(AAAMessage *message, str *peer_id)
+AAAMessage *AAASendRecvMessageToPeer(AAAMessage *message, str *peer_id, str *correlationID)
 {
 	peer *p;
 	gen_sem_t *sem;
@@ -353,7 +364,9 @@ AAAMessage *AAASendRecvMessageToPeer(AAAMessage *message, str *peer_id)
 	if(is_req(message)) {
 		sem_new(sem, 0);
 		t = cdp_add_trans(message, sendrecv_cb, (void *)sem,
-				config->transaction_timeout, 0);
+				config->transaction_timeout, 0, correlationID);
+
+		hlog_message(message, correlationID);
 
 		//		if (!peer_send_msg(p,message)) {
 		if(!sm_process(p, Send_Message, message, 0, 0)) {
@@ -381,6 +394,7 @@ AAAMessage *AAASendRecvMessageToPeer(AAAMessage *message, str *peer_id)
 		sem_free(sem);
 
 		ans = t->ans;
+		hlog_message(ans, correlationID);
 		cdp_free_trans(t);
 		return ans;
 	} else {
@@ -394,4 +408,12 @@ error:
 out_of_memory:
 	AAAFreeMessage(&message);
 	return 0;
+}
+
+static void hlog_message(AAAMessage *message, str* correlationID) {
+    hlog_diam_fn hlog_diam = (hlog_diam_fn)find_export("hlog_diam", NO_SCRIPT, 0);
+    if ((NULL != hlog_diam) && (NULL != correlationID)) {
+        int hlog_diam_res = hlog_diam(message, correlationID);
+        LM_DBG("hlog_diam res = %i", hlog_diam_res);
+    }
 }

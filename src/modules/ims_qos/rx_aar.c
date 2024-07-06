@@ -701,7 +701,7 @@ error:
  * Sends the Authorization Authentication Request - specifically this is an asynchronous AAR sent if another update adding video has failed so we need to remove video
  */
 
-int rx_send_aar_update_no_video(AAASession *auth)
+int rx_send_aar_update_no_video(AAASession *auth, str *callid)
 {
 
 	AAAMessage *aar = 0;
@@ -831,9 +831,9 @@ int rx_send_aar_update_no_video(AAASession *auth)
 
 	LM_DBG("sending AAR to PCRF\n");
 	if(rx_forced_peer.len)
-		ret = cdpb.AAASendMessageToPeer(aar, &rx_forced_peer, NULL, NULL);
+		ret = cdpb.AAASendMessageToPeer(aar, &rx_forced_peer, NULL, NULL, callid);
 	else
-		ret = cdpb.AAASendMessage(aar, NULL, NULL);
+		ret = cdpb.AAASendMessage(aar, NULL, NULL, callid);
 
 	return ret;
 
@@ -875,6 +875,8 @@ int rx_send_aar(struct sip_msg *req, struct sip_msg *res, AAASession *auth,
 
 	str ip;
 	uint16_t ip_version;
+	
+	str *correlationID = NULL;
 
 	//we get ip and identifier for the auth session data
 	rx_authsessiondata_t *p_session_data = 0;
@@ -1010,13 +1012,19 @@ int rx_send_aar(struct sip_msg *req, struct sip_msg *res, AAASession *auth,
 	if(auth)
 		cdpb.AAASessionsUnlock(auth->hash);
 
+	if((NULL != req) && (FAKED_REPLY != req) && (NULL != req->callid)) {
+        correlationID = &req->callid->body;
+    } else {
+        correlationID = NULL;
+    }
+
 	LM_DBG("sending AAR to PCRF\n");
 	if(rx_forced_peer.len)
 		ret = cdpb.AAASendMessageToPeer(aar, &rx_forced_peer,
-				(void *)async_aar_callback, (void *)saved_t_data);
+				(void *)async_aar_callback, (void *)saved_t_data, correlationID);
 	else
 		ret = cdpb.AAASendMessage(
-				aar, (void *)async_aar_callback, (void *)saved_t_data);
+				aar, (void *)async_aar_callback, (void *)saved_t_data, correlationID);
 
 	return ret;
 
@@ -1053,6 +1061,8 @@ int rx_send_aar_register(struct sip_msg *msg, AAASession *auth,
 	str ip;
 	uint16_t ip_version;
 	str via_host;
+
+	str *correlationID = NULL;
 
 	//we get ip and identifier for the auth session data
 	rx_authsessiondata_t *p_session_data = 0;
@@ -1160,13 +1170,19 @@ int rx_send_aar_register(struct sip_msg *msg, AAASession *auth,
 	if(auth)
 		cdpb.AAASessionsUnlock(auth->hash);
 
+	if((NULL != msg) && (FAKED_REPLY != msg) && (NULL != msg->callid)) {
+        correlationID = &msg->callid->body;
+    } else {
+        correlationID = NULL;
+    }
+
 	LM_DBG("sending AAR to PCRF\n");
 	if(rx_forced_peer.len)
 		ret = cdpb.AAASendMessageToPeer(aar, &rx_forced_peer,
-				(void *)async_aar_reg_callback, (void *)saved_t_data);
+				(void *)async_aar_reg_callback, (void *)saved_t_data, correlationID);
 	else
 		ret = cdpb.AAASendMessage(
-				aar, (void *)async_aar_reg_callback, (void *)saved_t_data);
+				aar, (void *)async_aar_reg_callback, (void *)saved_t_data, correlationID);
 
 	return ret;
 
