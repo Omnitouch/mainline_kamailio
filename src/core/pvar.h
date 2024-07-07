@@ -252,6 +252,8 @@ int pv_get_sintval(
 		struct sip_msg *msg, pv_param_t *param, pv_value_t *res, long sival);
 int pv_get_strval(
 		struct sip_msg *msg, pv_param_t *param, pv_value_t *res, str *sval);
+int pv_get_strval_hex(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res, str *sval);
 int pv_get_strzval(
 		struct sip_msg *msg, pv_param_t *param, pv_value_t *res, char *sval);
 int pv_get_strlval(struct sip_msg *msg, pv_param_t *param, pv_value_t *res,
