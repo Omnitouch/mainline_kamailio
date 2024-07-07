@@ -84,6 +84,10 @@ void ul_impu_removed(impurecord_t *r, ucontact_t *c, int type, void *param)
 	int assignment_type = AVP_IMS_SAR_USER_DEREGISTRATION;
 	int data_available = AVP_IMS_SAR_USER_DATA_NOT_AVAILABLE;
 
+	if (type == UL_IMPU_UNREG_EXPIRED) {
+        assignment_type = AVP_IMS_SAR_TIMEOUT_DEREGISTRATION;
+    }
+
 	//we only send SAR if the REGISTRATION state is (NOT) IMPU_NOT_REGISTERED and if send_sar_on_delete is set
 	//send_sar_on_delete is set by default - only unset if impu is deleted due to explicit dereg
 	LM_DBG("Received notification of UL IMPU removed for IMPU <%.*s>\n",
