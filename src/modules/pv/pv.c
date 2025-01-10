@@ -54,6 +54,7 @@ static int add_avp_aliases(modparam_t type, void *val);
 /* clang-format off */
 static tr_export_t mod_trans[] = {
 	{{"s", sizeof("s") - 1}, tr_parse_string}, /* string class */
+	{{"hex", (sizeof("hex") - 1)}, PVT_OTHER, pv_get_hex, 0, pv_parse_hex_name, 0, 0, 0}, /* hex class */
 	{{"nameaddr", sizeof("nameaddr") - 1}, tr_parse_nameaddr}, /* nameaddr class */
 	{{"uri", sizeof("uri") - 1}, tr_parse_uri}, /* uri class */
 	{{"param", sizeof("param") - 1}, tr_parse_paramlist}, /* param class */
@@ -303,6 +304,8 @@ static pv_export_t mod_pvs[] = {
 			PVT_OTHER, pv_get_ppi_attr, 0, 0, pv_parse_index, pv_init_iname, 2},
 	{{"rb", (sizeof("rb") - 1)}, /* */
 			PVT_MSG_BODY, pv_get_msg_body, 0, 0, 0, 0, 0},
+	{{"rb_hex", (sizeof("rb_hex") - 1)}, /* */
+		PVT_MSG_BODY, pv_get_msg_body_hex, 0, 0, 0, 0, 0},
 	{{"rd", (sizeof("rd") - 1)}, /* */
 			PVT_RURI_DOMAIN, pv_get_ruri_attr, pv_set_ruri_host, 0, 0,
 			pv_init_iname, 2},

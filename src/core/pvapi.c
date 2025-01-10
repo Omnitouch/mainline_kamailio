@@ -607,6 +607,38 @@ int pv_get_strval(
 }
 
 /**
+ * convert str_hex to pv_value_t
+ */
+int pv_get_strval_hex(struct sip_msg *msg, pv_param_t *param,
+		pv_value_t *res, str *sval)
+{
+	int bytes_to_encode = 0;
+
+	if(res==NULL)
+		return -1;
+
+	res->rs.s = pv_get_buffer();
+	res->rs.len = pv_get_buffer_size();
+
+	/* There are 2 chars per bytes */
+	bytes_to_encode = sval->len * 2;
+
+	if (res->rs.len <= bytes_to_encode) {
+		LM_ERR("Memory error: cannot fit %i bytes into a buffer of size %i \n", bytes_to_encode, res->rs.len);
+		return -1;
+	}
+
+	for (int i = 0; i < sval->len; ++i) {
+		sprintf(&res->rs.s[i * 2], "%02x", (unsigned char)sval->s[i]);
+	}
+
+	res->rs.len = bytes_to_encode;
+	res->flags = PV_VAL_STR;
+
+	return 0;
+}
+
+/**
  * convert strz to pv_value_t
  */
 int pv_get_strzval(

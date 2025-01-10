@@ -1474,6 +1474,22 @@ int pv_get_msg_body(struct sip_msg *msg, pv_param_t *param, pv_value_t *res)
 	return pv_get_strval(msg, param, res, &s);
 }
 
+int pv_get_msg_body_hex(struct sip_msg *msg, pv_param_t *param, pv_value_t *res)
+{
+	str s = {};
+	if(msg == NULL)
+		return -1;
+
+	s.s = get_body(msg);
+
+	if(s.s == NULL) {
+		LM_DBG("no message body\n");
+		return pv_get_null(msg, param, res);
+	}
+	s.len = msg->buf + msg->len - s.s;
+
+	return pv_get_strval_hex(msg, param, res, &s);
+}
 
 int pv_get_body_size(struct sip_msg *msg, pv_param_t *param, pv_value_t *res)
 {
@@ -4184,6 +4200,80 @@ int pv_get__s(sip_msg_t *msg, pv_param_t *param, pv_value_t *res)
 		return -1;
 	}
 	return pv_get_strval(msg, param, res, &sdata);
+}
+
+/**
+ *
+ */
+int pv_parse_hex_name(pv_spec_p sp, str *in)
+{
+	pv_elem_t *hex_string = NULL;
+
+	if(in->s == NULL || in->len <= 0)
+		return -1;
+
+	hex_string = pkg_malloc(sizeof(pv_elem_t));
+	if (hex_string == NULL) {
+		PKG_MEM_ERROR;
+		LM_ERR("Failed to allocate memory\n");
+		return -1;
+	}
+
+	memset(hex_string, 0, sizeof(pv_elem_t));
+	hex_string->text = *in;
+
+	sp->pvp.pvn.u.dname = (void*)hex_string;
+	sp->pvp.pvn.type = PV_NAME_OTHER;
+
+	return 0;
+}
+
+/**
+ *
+ */
+int pv_get_hex(sip_msg_t *msg, pv_param_t *param,
+		pv_value_t *res)
+{
+	str hex_buf = {0};
+	pv_elem_t *hex_string = NULL;
+	hex_string = (pv_elem_t*)param->pvn.u.dname;
+	int bytes_to_encode = 0;
+
+	if (NULL == hex_string)
+	{
+		LM_ERR("Parameter error: expected pv_elem_t but got NULL\n");
+		return pv_get_null(msg, param, res);
+	}
+
+	hex_buf.s = pv_get_buffer();
+	hex_buf.len = pv_get_buffer_size();
+
+	/* There are 2 chars per bytes so input must be multple of 2 */
+	if (0 != hex_string->text.len % 2) {
+		LM_ERR("Parameter error: expected a string with a length divisible by 2, "
+			   "however we received '%.*s' with a length of %i \n",
+			    hex_string->text.len,
+				hex_string->text.s,
+				hex_string->text.len);
+		return pv_get_null(msg, param, res);
+	}
+
+	bytes_to_encode = hex_string->text.len / 2;
+
+	if (hex_buf.len <= bytes_to_encode)
+	{
+		LM_ERR("Memory error: cannot fit %i bytes into a buffer of size %i \n", bytes_to_encode, hex_buf.len);
+		return pv_get_null(msg, param, res);
+	}
+
+	for (int i = 0; i < bytes_to_encode; ++i) {
+		int byte = 0;
+        sscanf(&hex_string->text.s[i * 2], "%2x", &byte);
+		hex_buf.s[i] = (char)byte;
+	}
+	hex_buf.len = bytes_to_encode;
+
+	return pv_get_strval(msg, param, res, &hex_buf);
 }
 
 /**

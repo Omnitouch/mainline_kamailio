@@ -187,6 +187,8 @@ int pv_get_content_length(
 
 int pv_get_msg_body(struct sip_msg *msg, pv_param_t *param, pv_value_t *res);
 
+int pv_get_msg_body_hex(struct sip_msg *msg, pv_param_t *param, pv_value_t *res);
+
 int pv_get_body_size(struct sip_msg *msg, pv_param_t *param, pv_value_t *res);
 
 int pv_get_escstr(struct sip_msg *msg, pv_param_t *param, pv_value_t *res);
@@ -326,6 +328,10 @@ int pv_parse_flag_param(pv_spec_p sp, str *in);
 int pv_parse__s_name(pv_spec_p sp, str *in);
 
 int pv_get__s(sip_msg_t *msg, pv_param_t *param, pv_value_t *res);
+
+int pv_parse_hex_name(pv_spec_p sp, str *in);
+
+int pv_get_hex(sip_msg_t *msg, pv_param_t *param, pv_value_t *res);
 
 int pv_parse_expires_name(pv_spec_p sp, str *in);
 
