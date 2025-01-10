@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -237,28 +239,30 @@ int parse_uri(char *buf, int len, struct sip_uri *uri)
 	} else                                                 \
 		goto error_bad_char
 
-#define check_host_end         \
-	case ':':                  \
-		/* found the host */   \
-		uri->host.s = s;       \
-		uri->host.len = p - s; \
-		state = URI_PORT;      \
-		s = p + 1;             \
-		break;                 \
-	case ';':                  \
-		uri->host.s = s;       \
-		uri->host.len = p - s; \
-		state = URI_PARAM;     \
-		s = p + 1;             \
-		break;                 \
-	case '?':                  \
-		uri->host.s = s;       \
-		uri->host.len = p - s; \
-		state = URI_HEADERS;   \
-		s = p + 1;             \
-		break;                 \
-	case '&':                  \
-	case '@':                  \
+#define check_host_end             \
+	case ':':                      \
+		/* found the host */       \
+		if(scheme != URN_SCH) {    \
+			uri->host.s = s;       \
+			uri->host.len = p - s; \
+			state = URI_PORT;      \
+			s = p + 1;             \
+		}                          \
+		break;                     \
+	case ';':                      \
+		uri->host.s = s;           \
+		uri->host.len = p - s;     \
+		state = URI_PARAM;         \
+		s = p + 1;                 \
+		break;                     \
+	case '?':                      \
+		uri->host.s = s;           \
+		uri->host.len = p - s;     \
+		state = URI_HEADERS;       \
+		s = p + 1;                 \
+		break;                     \
+	case '&':                      \
+	case '@':                      \
 		goto error_bad_char
 
 
@@ -493,7 +497,7 @@ int parse_uri(char *buf, int len, struct sip_uri *uri)
 					case '@': /* error no user part, or
 								* be forgiving and accept it ? */
 					default:
-						state = URI_USER;
+						state = (scheme == URN_SCH) ? URI_HOST : URI_USER;
 				}
 				break;
 			case URI_USER:

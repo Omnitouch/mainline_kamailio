@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -95,42 +97,42 @@ static int mod_init(void);
 /* clang-format off */
 static cmd_export_t cmds[] = {
 	{"sdp_remove_line_by_prefix", (cmd_function)w_sdp_remove_line_by_prefix,
-			1, fixup_spve_null, 0, ANY_ROUTE},
+			1,  fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_remove_line_by_prefix", (cmd_function)w_sdp_remove_line_by_prefix,
-			2, fixup_spve_spve, 0, ANY_ROUTE},
+			2,  fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"sdp_remove_codecs_by_id", (cmd_function)w_sdp_remove_codecs_by_id, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_remove_codecs_by_id", (cmd_function)w_sdp_remove_codecs_by_id, 2,
-			fixup_spve_spve, 0, ANY_ROUTE},
+			 fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"sdp_remove_codecs_by_name", (cmd_function)w_sdp_remove_codecs_by_name,
-			1, fixup_spve_null, 0, ANY_ROUTE},
+			1,  fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_remove_codecs_by_name", (cmd_function)w_sdp_remove_codecs_by_name,
-			2, fixup_spve_spve, 0, ANY_ROUTE},
+			2,  fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"sdp_keep_codecs_by_id", (cmd_function)w_sdp_keep_codecs_by_id, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_keep_codecs_by_id", (cmd_function)w_sdp_keep_codecs_by_id, 2,
-			fixup_spve_spve, 0, ANY_ROUTE},
+			 fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"sdp_keep_codecs_by_name", (cmd_function)w_sdp_keep_codecs_by_name, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_keep_codecs_by_name", (cmd_function)w_sdp_keep_codecs_by_name, 2,
-			fixup_spve_spve, 0, ANY_ROUTE},
+			 fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"sdp_with_media", (cmd_function)w_sdp_with_media, 1, fixup_spve_null,
 			0, ANY_ROUTE},
 	{"sdp_with_active_media", (cmd_function)w_sdp_with_active_media, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_remove_media", (cmd_function)w_sdp_remove_media, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_with_transport", (cmd_function)w_sdp_with_transport, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_with_transport_like", (cmd_function)w_sdp_with_transport_like, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_remove_transport", (cmd_function)w_sdp_remove_transport, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_transport", (cmd_function)w_sdp_transport, 1, 0, 0, ANY_ROUTE},
 	{"sdp_with_codecs_by_id", (cmd_function)w_sdp_with_codecs_by_id, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_with_codecs_by_name", (cmd_function)w_sdp_with_codecs_by_name, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+			 fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"sdp_print", (cmd_function)w_sdp_print, 1, fixup_igp_null, 0,
 			ANY_ROUTE},
 	{"sdp_get", (cmd_function)w_sdp_get, 1, 0, 0, ANY_ROUTE},
@@ -138,7 +140,7 @@ static cmd_export_t cmds[] = {
 	{"sdp_content", (cmd_function)w_sdp_content_sloppy, 1, 0, 0, ANY_ROUTE},
 	{"sdp_with_ice", (cmd_function)w_sdp_with_ice, 0, 0, 0, ANY_ROUTE},
 	{"sdp_get_line_startswith", (cmd_function)w_sdp_get_line_startswith, 2,
-			fixup_none_spve, 0, ANY_ROUTE},
+			fixup_none_spve, fixup_free_none_spve, ANY_ROUTE},
 	{"sdp_get_address_family", (cmd_function)w_sdp_get_address_family, 0, 0,
 			0, ANY_ROUTE},
 
@@ -1201,9 +1203,9 @@ static int sdp_with_transport(sip_msg_t *msg, str *transport, int like)
  */
 static int sdp_transport_helper(sip_msg_t *msg, char *avp)
 {
-	int_str avp_val;
-	int_str avp_name;
-	static unsigned short avp_type = 0;
+	avp_value_t avp_val;
+	avp_name_t avp_name;
+	static avp_flags_t avp_type = 0;
 	str s;
 	pv_spec_t *avp_spec = NULL;
 	int sdp_session_num;
@@ -1633,9 +1635,9 @@ static int w_sdp_print(sip_msg_t *msg, char *level, char *bar)
 static int sdp_get_helper(sip_msg_t *msg, char *avp)
 {
 	sdp_info_t *sdp = NULL;
-	int_str avp_val;
-	int_str avp_name;
-	static unsigned short avp_type = 0;
+	avp_value_t avp_val;
+	avp_name_t avp_name;
+	static avp_flags_t avp_type = 0;
 	str s;
 	pv_spec_t *avp_spec = NULL;
 	int sdp_missing = 1;
@@ -1814,10 +1816,10 @@ static int ki_sdp_get_line_startswith(sip_msg_t *msg, str *aname, str *sline)
 	str body = {NULL, 0};
 	str line = {NULL, 0};
 	char *p = NULL;
-	int_str avp_val;
-	int_str avp_name;
+	avp_value_t avp_val;
+	avp_name_t avp_name;
 	pv_spec_t *avp_spec = NULL;
-	static unsigned short avp_type = 0;
+	static avp_flags_t avp_type = 0;
 	int sdp_missing = 1;
 
 	if(sline == NULL || sline->len <= 0) {
@@ -2075,7 +2077,7 @@ int sdpops_attr_val(str *payload, str *attr, str *val)
 		/* find EoL or EoData */
 		eline = sline;
 		while(eline < payload->s + payload->len) {
-			if(*eline == '\r' || *eline == '\r') {
+			if(*eline == '\r' || *eline == '\n') {
 				break;
 			}
 			eline++;

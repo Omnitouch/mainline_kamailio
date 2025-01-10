@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -144,6 +146,8 @@ int load_tm(struct tm_binds *tmb)
 	tmb->t_release_transaction = t_release_transaction;
 	tmb->t_uas_request_clean_parsed = t_uas_request_clean_parsed;
 	tmb->t_reply_error = ki_t_reply_error;
+	tmb->get_tb = tm_get_tb;
+	tmb->set_tb = tm_set_tb;
 	return 1;
 }
 

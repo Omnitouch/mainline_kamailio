@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -408,12 +410,14 @@ int ksr_locate_module(char *mod_path, char **new_path)
 	int mdir_len;
 	int path_type;
 	int len;
+	int mod_path_len;
 
 	*new_path = NULL;
+	mod_path_len = strlen(mod_path);
 	path = mod_path;
 	path_type = 0;
 	modfile.s = path;
-	modfile.len = strlen(mod_path);
+	modfile.len = mod_path_len;
 	modname.s = modfile.s;
 	if(modfile.len > 3 && strcmp(modfile.s + modfile.len - 3, ".so") == 0) {
 		path_type = 1;
@@ -500,7 +504,7 @@ int ksr_locate_module(char *mod_path, char **new_path)
 				if(path == 0) {
 					/* try path <MODS_DIR>/mod_path - K compat */
 					path = (char *)pkg_malloc(
-							mdir_len + 1 /* "/" */ + strlen(mod_path) + 1);
+							mdir_len + 1 /* "/" */ + mod_path_len + 1);
 					if(path == 0) {
 						PKG_MEM_ERROR;
 						goto error;
@@ -511,8 +515,8 @@ int ksr_locate_module(char *mod_path, char **new_path)
 						path[len] = '/';
 						len++;
 					}
-					path[len] = 0;
-					strncat(path, mod_path, strlen(mod_path));
+					memcpy(path + len, mod_path, mod_path_len);
+					path[len + mod_path_len] = 0;
 
 					if(stat(path, &stat_buf) == -1) {
 						LM_DBG("module file not found <%s>\n", path);
@@ -535,9 +539,6 @@ int ksr_locate_module(char *mod_path, char **new_path)
 	return 0;
 
 error:
-	if(path != NULL && path != mod_path) {
-		pkg_free(path);
-	}
 
 	return -1;
 }

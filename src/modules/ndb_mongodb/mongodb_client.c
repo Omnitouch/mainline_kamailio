@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -33,6 +35,12 @@
 
 #include "mongodb_client.h"
 #include "api.h"
+
+#if MONGOC_CHECK_VERSION(1, 29, 0)
+#define _ksr_bson_as_json bson_as_legacy_extended_json
+#else
+#define _ksr_bson_as_json bson_as_json
+#endif
 
 static mongodbc_server_t *_mongodbc_srv_list = NULL;
 
@@ -246,14 +254,13 @@ int mongodbc_exec_cmd(
 			mongoc_client_get_collection(rsrv->client, dname->s, cname->s);
 
 	LM_DBG("trying to execute: [[%.*s]]\n", cmd->len, cmd->s);
-	c = cmd->s[cmd->len];
-	cmd->s[cmd->len] = '\0';
+	STR_VTOZ(cmd->s[cmd->len], c);
 	if(!bson_init_from_json(&command, cmd->s, cmd->len, &error)) {
 		cmd->s[cmd->len] = c;
 		LM_ERR("Failed to run command: %s\n", error.message);
 		goto error_exec;
 	}
-	cmd->s[cmd->len] = c;
+	STR_ZTOV(cmd->s[cmd->len], c);
 	if(emode == 0) {
 		ret = mongoc_collection_command_simple(
 				rpl->collection, &command, NULL, &reply, &error);
@@ -263,13 +270,29 @@ int mongodbc_exec_cmd(
 			goto error_exec;
 		}
 		bson_destroy(&command);
-		rpl->jsonrpl.s = bson_as_json(&reply, NULL);
+		rpl->jsonrpl.s = _ksr_bson_as_json(&reply, NULL);
 		rpl->jsonrpl.len = (rpl->jsonrpl.s) ? strlen(rpl->jsonrpl.s) : 0;
 		bson_destroy(&reply);
 	} else {
 		if(emode == 1) {
+#if MONGOC_CHECK_VERSION(1, 29, 0)
+			opts = bson_new();
+			ret = mongoc_collection_command_with_opts(
+					rpl->collection, &command, NULL, opts, &reply, &error);
+			bson_free(opts);
+			if(!ret) {
+				LM_ERR("Failed to run command: %s\n", error.message);
+				bson_destroy(&command);
+				goto error_exec;
+			}
+			rpl->jsonrpl.s = _ksr_bson_as_json(&reply, NULL);
+			rpl->jsonrpl.len = (rpl->jsonrpl.s) ? strlen(rpl->jsonrpl.s) : 0;
+			bson_destroy(&reply);
+			goto done;
+#else
 			rpl->cursor = mongoc_collection_command(rpl->collection,
 					MONGOC_QUERY_NONE, 0, 0, 0, &command, NULL, 0);
+#endif
 		} else {
 #if MONGOC_CHECK_VERSION(1, 5, 0)
 			if(emode == 3)
@@ -303,9 +326,13 @@ int mongodbc_exec_cmd(
 			}
 			goto error_exec;
 		}
-		rpl->jsonrpl.s = bson_as_json(cdoc, NULL);
+		rpl->jsonrpl.s = _ksr_bson_as_json(cdoc, NULL);
 		rpl->jsonrpl.len = (rpl->jsonrpl.s) ? strlen(rpl->jsonrpl.s) : 0;
 	}
+
+#if MONGOC_CHECK_VERSION(1, 29, 0)
+done:
+#endif
 
 	LM_DBG("command result: [[%s]]\n",
 			(rpl->jsonrpl.s) ? rpl->jsonrpl.s : "<null>");
@@ -479,7 +506,7 @@ int mongodbc_next_reply(str *name)
 		rpl->jsonrpl.s = NULL;
 		rpl->jsonrpl.len = 0;
 	}
-	rpl->jsonrpl.s = bson_as_json(cdoc, NULL);
+	rpl->jsonrpl.s = _ksr_bson_as_json(cdoc, NULL);
 	rpl->jsonrpl.len = (rpl->jsonrpl.s) ? strlen(rpl->jsonrpl.s) : 0;
 	LM_DBG("next cursor result: [[%s]]\n",
 			(rpl->jsonrpl.s) ? rpl->jsonrpl.s : "<null>");

@@ -27,6 +27,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -72,6 +74,7 @@ typedef struct _isc_mark
 
 
 int isc_mark_get_from_msg(struct sip_msg *msg, isc_mark *mark);
+int isc_mark_get_from_lumps(struct sip_msg *msg, isc_mark *mark);
 void isc_mark_get(str x, isc_mark *mark);
 int base16_to_bin(char *from, int len, char *to);
 int isc_mark_drop_route(struct sip_msg *msg);

@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -69,8 +71,8 @@ struct multiparam_t
 		str s;
 		struct
 		{
-			unsigned short flags;
-			int_str name;
+			avp_flags_t flags;
+			avp_name_t name;
 		} a;
 		pv_elem_t *p;
 	} u;

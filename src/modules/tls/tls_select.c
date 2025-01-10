@@ -6,6 +6,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -1187,21 +1189,16 @@ static int pv_comp(sip_msg_t *msg, pv_param_t *param, pv_value_t *res)
 
 int pv_parse_alt_name(pv_spec_p sp, str *in)
 {
-	pv_elem_t *fmt = NULL;
-
 	if(in->s == NULL || in->len <= 0)
 		return -1;
-	if(pv_parse_format(in, &fmt) < 0 || fmt == NULL) {
-		LM_ERR("wrong format[%.*s]\n", in->len, in->s);
-		return -1;
-	}
-	if(strncmp(in->s, "DNS", 3) == 0) {
+
+	if(in->len == 3 && strncmp(in->s, "DNS", 3) == 0) {
 		sp->pvp.pvn.u.isname.name.n = PV_COMP_HOST;
-	} else if(strncmp(in->s, "URI", 3) == 0) {
+	} else if(in->len == 3 && strncmp(in->s, "URI", 3) == 0) {
 		sp->pvp.pvn.u.isname.name.n = PV_COMP_URI;
-	} else if(strncmp(in->s, "EMAIL", 5) == 0) {
+	} else if(in->len == 5 && strncmp(in->s, "EMAIL", 5) == 0) {
 		sp->pvp.pvn.u.isname.name.n = PV_COMP_E;
-	} else if(strncmp(in->s, "IP", 2) == 0) {
+	} else if(in->len == 2 && strncmp(in->s, "IP", 2) == 0) {
 		sp->pvp.pvn.u.isname.name.n = PV_COMP_IP;
 	} else {
 		LM_ERR("Unsupported alt name %s\n", in->s);

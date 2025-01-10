@@ -64,9 +64,6 @@
 #include "../../core/lvalue.h"
 #include "../../core/pt.h" /* Process table */
 #include "../../core/kemi.h"
-#define KSR_RTHREAD_NEED_4L
-#define KSR_RTHREAD_SKIP_P
-#include "../../core/rthreads.h"
 
 #include "functions.h"
 #include "curlcon.h"
@@ -232,7 +229,7 @@ static param_export_t params[] = {
 	{"useragent", PARAM_STR,  &default_useragent },
 	{"maxdatasize", PARAM_INT,  &default_maxdatasize },
 	{"config_file", PARAM_STR,  &http_client_config_file },
-	{"httpcon",  PARAM_STRING|USE_FUNC_PARAM, (void*)curl_con_param},
+	{"httpcon",  PARAM_STRING|PARAM_USE_FUNC, (void*)curl_con_param},
 	{"authmethod", PARAM_INT, &default_authmethod },
 	{"keep_connections", PARAM_INT, &default_keep_connections },
 	{"query_result", PARAM_INT, &default_query_result },
@@ -305,7 +302,7 @@ static int mod_init(void)
 	LM_DBG("init curl module\n");
 
 	/* Initialize curl */
-	if(run_thread4L((_thread_proto4L)&curl_global_init, CURL_GLOBAL_ALL)) {
+	if(curl_global_init(CURL_GLOBAL_ALL)) {
 		LM_ERR("curl_global_init failed\n");
 		return -1;
 	}

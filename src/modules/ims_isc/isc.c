@@ -27,6 +27,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -54,10 +56,11 @@
  * @param msg - the SIP message
  * @param m  - the isc_match that matched with info about where to forward it
  * @param mark  - the isc_mark that should be used to mark the message
+ * @param status - the state of the isc_mark
  * @returns #ISC_RETURN_TRUE if OK, #ISC_RETURN_ERROR if not
  */
-int isc_forward(
-		struct sip_msg *msg, isc_match *m, isc_mark *mark, int firstflag)
+int isc_forward(struct sip_msg *msg, isc_match *m, isc_mark *mark,
+		enum isc_mark_status status)
 {
 	struct cell *t;
 	unsigned int hash, label;
@@ -78,7 +81,7 @@ int isc_forward(
 	msg->dst_uri.s[msg->dst_uri.len] = '\0';
 
 	/* append branch if last trigger failed */
-	if(is_route_type(FAILURE_ROUTE) && !firstflag)
+	if(status == ISCMARK_FOUND_LUMPS)
 		append_branch(msg, &(msg->first_line.u.request.uri), &(msg->dst_uri), 0,
 				Q_UNSPECIFIED, 0, 0, 0, 0, 0, 0);
 

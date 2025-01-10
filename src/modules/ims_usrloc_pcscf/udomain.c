@@ -28,6 +28,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -229,7 +231,7 @@ int mem_insert_pcontact(struct udomain *_d, str *_contact,
 {
 	int sl;
 
-	if(new_pcontact(_d->name, _contact, _ci, _c) < 0) {
+	if(new_pcontact(_d, _contact, _ci, _c) < 0) {
 		LM_ERR("creating pcontact failed\n");
 		return -1;
 	}
@@ -496,7 +498,7 @@ int get_pcontact_from_cache(udomain_t *_d, pcontact_info_t *contact_info,
 					contact_info->aor.len, contact_info->aor.s);
 			return 1;
 		}
-		LM_DBG("checking for rinstance");
+		LM_DBG("checking for rinstance\n");
 		/*check for alias - NAT */
 		params = needle_uri.sip_params.s;
 		params_len = needle_uri.sip_params.len;
@@ -548,7 +550,7 @@ int get_pcontact_from_cache(udomain_t *_d, pcontact_info_t *contact_info,
 			int check2_passed = 0;
 			ip_addr_t c_ip_addr;
 			ip_addr_t ci_ip_addr;
-			LM_DBG("mached a record by aorhash: %u\n", aorhash);
+			LM_DBG("matched a record by aorhash: %u\n", aorhash);
 
 			// convert 'contact->contact host' ip string to ip_addr_t
 			if(str2ipxbuf(&c->contact_host, &c_ip_addr) < 0) {

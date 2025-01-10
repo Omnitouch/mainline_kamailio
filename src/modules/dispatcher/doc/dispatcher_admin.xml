@@ -2014,6 +2014,31 @@ onreply_route {
 </programlisting>
 		</example>
 	</section>
+	<section id="dispatcher.f.ds_dsg_fetch_uri">
+		<title>
+		<function moreinfo="none">ds_dsg_fetch_uri(setid, uri)</function>
+		</title>
+		<para>
+		Sets the destination group id to setid for fetching $dsg(key) attributes
+		and the overload-control attributes to the corresponding uri record from
+		that group.
+		</para>
+		<para>Parameters: <emphasis>setid</emphasis> - integer or variable
+		holding the set id value; <emphasis>uri</emphasis> - string or variables
+		holding the SIP URI value.</para>
+		<para>
+		This function can be used from ANY_ROUTE.
+		</para>
+		<example>
+		<title><function>ds_dsg_fetch_uri()</function> usage</title>
+		<programlisting format="linespecific">
+...
+    ds_dsg_fetch_uri("1", "sip:127.0.0.1:5080");
+    xinfo("set id: 1 - all: $dsg(count); active: $dsg(active); $dsg(ocrate)\n");
+...
+</programlisting>
+		</example>
+	</section>
 	<section id="dispatcher.f.ds_oc_set_attrs">
 		<title>
 		<function moreinfo="none">ds_oc_set_attrs(setid, uri, rval, tval, sval)</function>
@@ -2048,6 +2073,10 @@ onreply_route {
 		</listitem>
 		</itemizedlist>
 		<para>The parameters can include variables.</para>
+		<para>The returns 1 (cfg-true) when the oc attrbutes are udpated for a
+		destination record; -1 (cfg-false) when there is an internal error;
+		-2 (cfg-false) when no destination is updated (e.g., not found or the
+		ocseq condition fails).</para>
 		<para>
 		This function can be used from ANY_ROUTE.
 		</para>
@@ -2336,6 +2365,30 @@ kamctl rpc dispatcher.hash 4 bob server.com
 ...
 </programlisting>
     </section>
+	<section id="dispatcher.r.oclist">
+		<title>
+		<function moreinfo="none">dispatcher.oclist</function>
+		</title>
+		<para>
+		List the overload control attributes for the records in a specific group.
+		</para>
+		<para>
+		Name: <emphasis>dispatcher.oclist</emphasis>
+		</para>
+		<para>Parameters:</para>
+		<itemizedlist>
+			<listitem><para>_group_: destination group id</para></listitem>
+		</itemizedlist>
+		<para>
+		Example:
+		</para>
+<programlisting  format="linespecific">
+...
+# prototype: kamcli dispatcher.oclist _group_
+kamcli dispatcher.oclist 1
+...
+</programlisting>
+    </section>
 
    </section>
 
@@ -2371,6 +2424,8 @@ kamctl rpc dispatcher.hash 4 bob server.com
 				<listitem><para>16 (bit at index 4 - 1 &lt;&lt;4) - skip DNS A/AAAA resolve at startup,
 				useful when the hostname of the destination address is a NAPTR or SRV record only.
 				Such addresses cannot be matched anymore with ds_is_from_list(...).</para>
+				</listitem>
+				<listitem><para>32 (bit at index 5 - 1 &lt;&lt;5) - no ping to destination</para>
 				</listitem>
 			</itemizedlist>
 			</para>
