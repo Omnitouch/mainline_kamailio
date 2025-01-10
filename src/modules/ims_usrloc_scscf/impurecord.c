@@ -431,6 +431,11 @@ static inline void process_impurecord(impurecord_t *_r)
 							_r->public_identity.s);
 					run_ul_callbacks(_r->cbs, UL_IMPU_EXPIRE_CONTACT, _r, ptr);
 				}
+				if (exists_ulcb_type(_r->cbs, UL_IMPU_UNREG_EXPIRED)) {
+					LM_DBG("Running callback UL_IMPU_UNREG_EXPIRED for contact [%.*s] and impu [%.*s]\n", ptr->c.len, ptr->c.s, _r->public_identity.len, _r->public_identity.s);
+					run_ul_callbacks(_r->cbs, UL_IMPU_UNREG_EXPIRED, _r, ptr);
+				}
+
 				hascontacts =
 						1; // we do this because the impu must only be deleted if in state deleted....
 				mustdeleteimpu = 0;
