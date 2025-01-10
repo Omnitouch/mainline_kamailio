@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -221,7 +223,7 @@ static param_export_t params[] = {
 	{"realm_prefix", PARAM_STRING, &auth_realm_prefix.s},
 	{"use_domain", PARAM_INT, &auth_use_domain},
 	{"algorithm", PARAM_STR, &auth_algorithm},
-	{"add_authinfo_hdr", INT_PARAM, &add_authinfo_hdr},
+	{"add_authinfo_hdr", PARAM_INT, &add_authinfo_hdr},
 
 	{0, 0, 0}
 };
@@ -687,6 +689,16 @@ end:
 /**
  *
  */
+static int ki_pv_proxy_authenticate(
+		sip_msg_t *msg, str *realm, str *passwd, int flags)
+{
+	return pv_authenticate(msg, realm, passwd, flags, HDR_PROXYAUTH_T,
+			&msg->first_line.u.request.method);
+}
+
+/**
+ *
+ */
 static int pv_proxy_authenticate(
 		struct sip_msg *msg, char *realm, char *passwd, char *flags)
 {
@@ -723,6 +735,26 @@ static int pv_proxy_authenticate(
 
 error:
 	return AUTH_ERROR;
+}
+
+/**
+ *
+ */
+static int ki_pv_www_authenticate(
+		sip_msg_t *msg, str *realm, str *passwd, int flags)
+{
+	return pv_authenticate(msg, realm, passwd, flags, HDR_AUTHORIZATION_T,
+			&msg->first_line.u.request.method);
+}
+
+/**
+ *
+ */
+static int ki_pv_www_authenticate_method(
+		sip_msg_t *msg, str *realm, str *passwd, int flags, str *method)
+{
+	return pv_authenticate(
+			msg, realm, passwd, flags, HDR_AUTHORIZATION_T, method);
 }
 
 /**
@@ -1400,6 +1432,21 @@ static sr_kemi_t sr_kemi_auth_exports[] = {
 		SR_KEMIP_INT, pv_auth_check,
 		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
 			SR_KEMIP_INT, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth"), str_init("pv_proxy_authenticate"),
+		SR_KEMIP_INT, ki_pv_proxy_authenticate,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth"), str_init("pv_www_authenticate"),
+		SR_KEMIP_INT, ki_pv_www_authenticate,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("auth"), str_init("pv_www_authenticate_method"),
+		SR_KEMIP_INT, ki_pv_www_authenticate_method,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_INT,
+			SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},
 	{ str_init("auth"), str_init("has_credentials"),
 		SR_KEMIP_INT, ki_has_credentials,

@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -794,6 +796,7 @@ static int db_redis_build_query_keys(km_redis_con_t *con, const str *table_name,
 							type->type.s);
 				}
 				keyname.s = NULL;
+				break;
 			} else if(keyname.s) {
 				pkg_free(keyname.s);
 				keyname.s = NULL;
@@ -1020,43 +1023,51 @@ static int db_redis_scan_query_keys_pattern(km_redis_con_t *con,
 #endif
 
 #ifdef WITH_HIREDIS_CLUSTER
+	return 0;
+err:
+	if(reply)
+		db_redis_free_reply(&reply);
+	return -1;
 }
+#else
+
+		// for full table scans, we have to manually match all given keys
+		// but only do this once for repeated invocations
+		if(!*manual_keys) {
+			*manual_keys_count = _n;
+			*manual_keys = (int *)pkg_malloc(*manual_keys_count * sizeof(int));
+			if(!*manual_keys) {
+				LM_ERR("Failed to allocate memory for manual keys\n");
+				goto err;
+			}
+			memset(*manual_keys, 0, *manual_keys_count * sizeof(int));
+			for(l = 0; l < _n; ++l) {
+				(*manual_keys)[l] = l;
+			}
+		}
+
+		if(reply) {
+			db_redis_free_reply(&reply);
+		}
+
+		db_redis_key_free(&query_v);
+
+		LM_DBG("got %lu entries by scan\n", (unsigned long)i);
+		return 0;
+
+	err:
+		if(reply)
+			db_redis_free_reply(&reply);
+		db_redis_key_free(&query_v);
+		db_redis_key_free(query_keys);
+		*query_keys_count = 0;
+		if(*manual_keys) {
+			pkg_free(*manual_keys);
+			*manual_keys = NULL;
+		}
+		return -1;
+	}
 #endif
-
-// for full table scans, we have to manually match all given keys
-// but only do this once for repeated invocations
-if(!*manual_keys) {
-	*manual_keys_count = _n;
-	*manual_keys = (int *)pkg_malloc(*manual_keys_count * sizeof(int));
-	if(!*manual_keys) {
-		LM_ERR("Failed to allocate memory for manual keys\n");
-		goto err;
-	}
-	memset(*manual_keys, 0, *manual_keys_count * sizeof(int));
-	for(l = 0; l < _n; ++l) {
-		(*manual_keys)[l] = l;
-	}
-}
-
-if(reply) {
-	db_redis_free_reply(&reply);
-}
-
-db_redis_key_free(&query_v);
-
-LM_DBG("got %lu entries by scan\n", (unsigned long)i);
-return 0;
-
-err : if(reply) db_redis_free_reply(&reply);
-db_redis_key_free(&query_v);
-db_redis_key_free(query_keys);
-*query_keys_count = 0;
-if(*manual_keys) {
-	pkg_free(*manual_keys);
-	*manual_keys = NULL;
-}
-return -1;
-}
 
 static int db_redis_scan_query_keys(km_redis_con_t *con, const str *table_name,
 		const int _n, redis_key_t **query_keys, int *query_keys_count,

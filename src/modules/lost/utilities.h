@@ -6,6 +6,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -97,7 +99,7 @@ typedef struct lost_loc
 	char *geodetic;	 /* geodetic location (findServiceRequest) */
 	char *longitude; /* geo longitude */
 	char *latitude;	 /* geo latitude */
-	char *altitude;  /* geo altitude */
+	char *altitude;	 /* geo altitude */
 	char *profile;	 /* location profile (findServiceRequest) */
 	int radius;		 /* geo radius (findServiceRequest) */
 	int recursive;	 /* recursion true|false (findServiceRequest)*/

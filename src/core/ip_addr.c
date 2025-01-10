@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -283,6 +285,52 @@ char *ip_addr2strz(struct ip_addr *ip)
 	static char buff[IP_ADDR_MAX_STRZ_SIZE];
 	char *p;
 	int len;
+
+	p = buff;
+	if(ip->af == AF_INET6) {
+		*p++ = '[';
+	}
+	len = ip_addr2sbuf(ip, p, sizeof(buff) - 3);
+	p += len;
+	if(ip->af == AF_INET6) {
+		*p++ = ']';
+	}
+	*p = 0;
+
+	return buff;
+}
+
+#define IP_ADDR_BUF_NR 8
+static char _ksr_addr2x_buff[IP_ADDR_BUF_NR][IP_ADDR_MAX_STR_SIZE];
+static int _ksr_addr2x_idx = 0;
+
+/* fast ip_addr -> string converter;
+ * it uses an internal buffer
+ */
+char *ip_addr2xa(struct ip_addr *ip)
+{
+	int len;
+	char *buff;
+
+	buff = _ksr_addr2x_buff[_ksr_addr2x_idx];
+	_ksr_addr2x_idx = (_ksr_addr2x_idx + 1) % IP_ADDR_BUF_NR;
+
+	len = ip_addr2sbuf(ip, buff, sizeof(buff) - 1);
+	buff[len] = 0;
+
+	return buff;
+}
+
+
+/* full address in text representation, including [] for ipv6 */
+char *ip_addr2xstrz(struct ip_addr *ip)
+{
+	char *p;
+	int len;
+	char *buff;
+
+	buff = _ksr_addr2x_buff[_ksr_addr2x_idx];
+	_ksr_addr2x_idx = (_ksr_addr2x_idx + 1) % IP_ADDR_BUF_NR;
 
 	p = buff;
 	if(ip->af == AF_INET6) {

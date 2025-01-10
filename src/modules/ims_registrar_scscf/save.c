@@ -25,6 +25,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -125,20 +127,24 @@ static inline int calc_contact_expires(
 						  : default_registrar_cfg.default_expires;
 		goto end;
 	}
-	if(!sos_reg && r < default_registrar_cfg.min_expires) {
+	if(!sos_reg && r < default_registrar_cfg.min_expires
+			&& default_registrar_cfg.min_expires != 0) {
 		r = default_registrar_cfg.min_expires;
 		goto end;
 	}
-	if(sos_reg && r < default_registrar_cfg.em_min_expires) {
+	if(sos_reg && r < default_registrar_cfg.em_min_expires
+			&& default_registrar_cfg.em_min_expires != 0) {
 		r = default_registrar_cfg.em_min_expires;
 		goto end;
 	}
-	if(!sos_reg && r > default_registrar_cfg.max_expires) {
+	if(!sos_reg && r > default_registrar_cfg.max_expires
+			&& default_registrar_cfg.max_expires != 0) {
 		r = default_registrar_cfg.max_expires;
 		goto end;
 	}
-	if(sos_reg && r > default_registrar_cfg.em_max_expires) {
-		r = default_registrar_cfg.em_min_expires;
+	if(sos_reg && r > default_registrar_cfg.em_max_expires
+			&& default_registrar_cfg.em_max_expires != 0) {
+		r = default_registrar_cfg.em_max_expires;
 		goto end;
 	}
 end:

@@ -1023,8 +1023,9 @@ static int _xl_parse_format(
 	xl_elog_p e, e0;
 	struct hdr_field hdr;
 	str name;
-	int avp_flags, avp_index;
-	int_str avp_name;
+	int avp_index;
+	avp_flags_t avp_flags;
+	avp_name_t avp_name;
 	select_t *sel;
 	int *range;
 
@@ -1895,8 +1896,10 @@ int xl_mod_init()
 								str_ipaddr.s[str_ipaddr.len] = '\0';
 							} else {
 								pkg_free(s);
+								s = NULL;
 								str_ipaddr.len = 0;
 								PKG_MEM_ERROR_FMT("for str_ipaddr\n");
+								return -1;
 							}
 						} else if(strncmp(str_ipaddr.s, s, str_ipaddr.len)
 								  != 0) {
@@ -1913,7 +1916,8 @@ int xl_mod_init()
 			}
 		}
 	}
-	pkg_free(s);
+	if(s != NULL)
+		pkg_free(s);
 
 	DBG("Hostname:   %.*s\n", str_hostname.len, ZSW(str_hostname.s));
 	DBG("Domainname: %.*s\n", str_domainname.len, ZSW(str_domainname.s));

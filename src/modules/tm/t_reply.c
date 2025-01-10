@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -361,10 +363,10 @@ static char *build_ack(struct sip_msg *rpl, struct cell *trans, int branch,
 	if(cfg_get(tm, tm_cfg, reparse_invite)) {
 		/* build the ACK from the INVITE which was sent out */
 		return build_local_reparse(
-				trans, branch, ret_len, ACK, ACK_LEN, &to, 0);
+				trans, branch, ret_len, ACK, ACK_LEN, &to, NULL, 0);
 	} else {
 		/* build the ACK from the reveived INVITE */
-		return build_local(trans, branch, ret_len, ACK, ACK_LEN, &to, 0);
+		return build_local(trans, branch, ret_len, ACK, ACK_LEN, &to, NULL, 0);
 	}
 }
 
@@ -1401,7 +1403,7 @@ static enum rps t_should_relay_response(struct cell *Trans, int new_code,
 		 *  faked a CANCEL on a non-replied branch don't
 		 * report on it either */
 		if((Trans->uac[branch].last_received == 487)
-				|| (Trans->uac[branch].last_received == 408
+				|| (Trans->uac[branch].last_received == _tm_reply_408_code
 						&& new_code == 487)) {
 			LM_DBG("%d came for a %d branch (ignored)\n", new_code,
 					Trans->uac[branch].last_received);
@@ -1999,8 +2001,12 @@ enum rps relay_reply(struct cell *t, struct sip_msg *p_msg, int branch,
 				/* revert the temporary "store" reply above */
 				t->uac[branch].reply = reply_bak;
 			} else {
-				reason.s = error_text(relayed_code);
-				reason.len = strlen(reason.s);
+				if(relayed_code == _tm_reply_408_code) {
+					reason = _tm_reply_408_reason;
+				} else {
+					reason.s = error_text(relayed_code);
+					reason.len = strlen(reason.s);
+				}
 				buf = build_res_buf_from_sip_req(relayed_code, &reason, to_tag,
 						t->uas.request, &res_len, &bm);
 			}
@@ -2488,8 +2494,8 @@ int reply_received(struct sip_msg *p_msg)
 				LM_DBG("branch CANCEL created\n");
 				if(t->uas.cancel_reas) {
 					/* cancel reason was saved, use it */
-					cancel_branch(
-							t, branch, t->uas.cancel_reas, F_CANCEL_B_FORCE_C);
+					cancel_branch(t, branch, NULL, t->uas.cancel_reas,
+							F_CANCEL_B_FORCE_C);
 				} else {
 					/* note that in this case we do not know the reason,
 					 * we only know it's a final reply (either locally
@@ -2498,8 +2504,8 @@ int reply_received(struct sip_msg *p_msg)
 					cancel_data.reason.cause = (t->uas.status >= 200)
 													   ? t->uas.status
 													   : CANCEL_REAS_UNKNOWN;
-					cancel_branch(
-							t, branch, &cancel_data.reason, F_CANCEL_B_FORCE_C);
+					cancel_branch(t, branch, NULL, &cancel_data.reason,
+							F_CANCEL_B_FORCE_C);
 				}
 			}
 			goto done; /* nothing to do */
@@ -2986,6 +2992,8 @@ void rpc_reply(rpc_t *rpc, void *c)
 {
 	int ret;
 	struct cell *trans;
+	tm_cell_t *orig_t = NULL;
+	int orig_branch;
 	unsigned int hash_index, label, code;
 	str ti, body, headers, tag, reason;
 
@@ -3021,6 +3029,7 @@ void rpc_reply(rpc_t *rpc, void *c)
 	}
 	LM_DBG("hash_index=%u label=%u\n", hash_index, label);
 
+	tm_get_tb(&orig_t, &orig_branch);
 	if(t_lookup_ident(&trans, hash_index, label) < 0) {
 		ERR("Lookup failed\n");
 		rpc->fault(c, 481, "No such transaction");
@@ -3030,6 +3039,7 @@ void rpc_reply(rpc_t *rpc, void *c)
 	/* it's refcounted now, t_reply_with body unrefs for me -- I can
 	 * continue but may not use T anymore  */
 	ret = t_reply_with_body(trans, code, &reason, &body, &headers, &tag);
+	tm_set_tb(orig_t, orig_branch);
 
 	if(ret < 0) {
 		LM_ERR("Reply failed\n");
@@ -3052,6 +3062,8 @@ void rpc_reply_callid(rpc_t *rpc, void *c)
 {
 	int code;
 	tm_cell_t *trans;
+	tm_cell_t *orig_t = NULL;
+	int orig_branch;
 	str reason = {0, 0};
 	str totag = {0, 0};
 	str hdrs = {0, 0};
@@ -3094,6 +3106,7 @@ void rpc_reply_callid(rpc_t *rpc, void *c)
 		return;
 	}
 
+	tm_get_tb(&orig_t, &orig_branch);
 	if(t_lookup_callid(&trans, callid, cseq) < 0) {
 		rpc->fault(c, 404, "Transaction not found");
 		return;
@@ -3102,6 +3115,7 @@ void rpc_reply_callid(rpc_t *rpc, void *c)
 	/* it's refcounted now, t_reply_with body unrefs for me -- I can
 	 * continue but may not use T anymore  */
 	n = t_reply_with_body(trans, code, &reason, &body, &hdrs, &totag);
+	tm_set_tb(orig_t, orig_branch);
 
 	if(n < 0) {
 		rpc->fault(c, 500, "Reply failed");

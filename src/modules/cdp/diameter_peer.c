@@ -25,6 +25,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -233,10 +235,8 @@ int diameter_peer_start(int blocking)
 {
 	int pid;
 	int k = 0;
-	int seed;
 	peer *p;
 
-	seed = random();
 	/* fork workers */
 	for(k = 0; k < config->workers; k++) {
 		pid = fork_process(1001 + k, "cdp_worker", 1);
@@ -245,7 +245,6 @@ int diameter_peer_start(int blocking)
 			return 0;
 		}
 		if(pid == 0) {
-			srandom(seed * k);
 			snprintf(
 					pt[process_no].desc, MAX_PT_DESC, "cdp worker child=%d", k);
 			if(cfg_child_init())
@@ -266,7 +265,6 @@ int diameter_peer_start(int blocking)
 
 
 	/* fork receiver for unknown peers */
-	seed = random();
 	pid = fork_process(1001 + k, "cdp_receiver_peer_unknown", 1);
 
 	if(pid == -1) {
@@ -275,7 +273,6 @@ int diameter_peer_start(int blocking)
 		return 0;
 	}
 	if(pid == 0) {
-		srandom(seed * k);
 		snprintf(pt[process_no].desc, MAX_PT_DESC, "cdp receiver peer unknown");
 		if(cfg_child_init())
 			return 0;
@@ -288,7 +285,6 @@ int diameter_peer_start(int blocking)
 	}
 
 	/* fork receivers for each pre-configured peers */
-	seed = random();
 	lock_get(peer_list_lock);
 	for(p = peer_list->head, k = -1; p; p = p->next, k--) {
 		pid = fork_process(1001 + k, "cdp_receiver_peer", 1);
@@ -298,7 +294,6 @@ int diameter_peer_start(int blocking)
 			return 0;
 		}
 		if(pid == 0) {
-			srandom(seed * k);
 			snprintf(pt[process_no].desc, MAX_PT_DESC, "cdp_receiver_peer=%.*s",
 					p->fqdn.len, p->fqdn.s);
 			if(cfg_child_init())

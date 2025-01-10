@@ -359,6 +359,11 @@ int ht_init_tables(void)
 	ht = _ht_root;
 
 	while(ht) {
+		if(ht->entries != NULL) {
+			ht = ht->next;
+			continue;
+		}
+
 		LM_DBG("initializing htable [%.*s] with nr. of slots: %d\n",
 				ht->name.len, ht->name.s, ht->htsize);
 		if(ht->name.len + sizeof("htable:expired:") < HT_EVEX_NAME_SIZE) {
@@ -738,6 +743,10 @@ ht_cell_t *ht_cell_value_add(ht_t *ht, str *name, int val, ht_cell_t *old)
 			if(now > 0 && it->expire != 0 && it->expire < now) {
 				/* entry has expired */
 
+				it->expire = ht->htexpire;
+				if(it->expire) {
+					it->expire += now;
+				}
 				if(ht->flags == PV_VAL_INT) {
 					/* initval is integer, use it to create a fresh entry */
 					it->flags &= ~AVP_VAL_STR;
@@ -860,8 +869,14 @@ ht_cell_t *ht_cell_pkg_copy(ht_t *ht, str *name, ht_cell_t *old)
 				}
 			}
 			cell = (ht_cell_t *)pkg_malloc(it->msize);
-			if(cell != NULL)
+			if(cell != NULL) {
 				memcpy(cell, it, it->msize);
+
+				cell->name.s = (char *)cell + sizeof(ht_cell_t);
+				if(cell->flags & AVP_VAL_STR) {
+					cell->value.s.s = (char *)cell->name.s + cell->name.len + 1;
+				}
+			}
 			ht_slot_unlock(ht, idx);
 			return cell;
 		}
@@ -1565,6 +1580,7 @@ int ht_count_cells_re(str *sre, ht_t *ht, int mode)
 	str sval;
 	str tval;
 	int ival = 0;
+	time_t tnow = 0;
 
 	if(sre == NULL || sre->len <= 0 || ht == NULL)
 		return 0;
@@ -1644,11 +1660,17 @@ int ht_count_cells_re(str *sre, ht_t *ht, int mode)
 		}
 	}
 
+	tnow = time(NULL);
 	for(i = 0; i < ht->htsize; i++) {
 		/* free entries */
 		ht_slot_lock(ht, i);
 		it = ht->entries[i].first;
 		while(it) {
+			if(ht->htexpire > 0 && it->expire != 0 && it->expire < tnow) {
+				/* entry has expired, continue */
+				it = it->next;
+				continue;
+			}
 			it0 = it->next;
 			if(op == 5) {
 				if(!(it->flags & AVP_VAL_STR))

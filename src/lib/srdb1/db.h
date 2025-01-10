@@ -4,6 +4,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -48,6 +50,8 @@
 #include "db_cap.h"
 #include "db_con.h"
 #include "db_row.h"
+#include "db_id.h"
+#include "db_pool.h"
 #include "db_pooling.h"
 #include "db_locking.h"
 
@@ -464,7 +468,7 @@ int db_bind_mod(const str *mod, db_func_t *dbf);
  * \return returns a pointer to the db1_con_t representing the connection if it was
    successful, otherwise 0 is returned.
  */
-db1_con_t *db_do_init(const str *url, void *(*new_connection)());
+db1_con_t *db_do_init(const str *url, void *(*new_connection)(struct db_id *));
 
 
 /**
@@ -478,8 +482,8 @@ db1_con_t *db_do_init(const str *url, void *(*new_connection)());
  * \return returns a pointer to the db1_con_t representing the connection if it was
    successful, otherwise 0 is returned.
  */
-db1_con_t *db_do_init2(
-		const str *url, void *(*new_connection)(), db_pooling_t pooling);
+db1_con_t *db_do_init2(const str *url, void *(*new_connection)(struct db_id *),
+		db_pooling_t pooling);
 
 
 /**
@@ -490,7 +494,7 @@ db1_con_t *db_do_init2(
  * \param _h database connection handle
  * \param (*free_connection) Pointer to the db specific free_connection method
  */
-void db_do_close(db1_con_t *_h, void (*free_connection)());
+void db_do_close(db1_con_t *_h, void (*free_connection)(struct pool_con *));
 
 
 /**

@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -278,7 +280,8 @@ char *parse_sip_header_name(char *const begin, const char *const end,
 		if(*p != ' ' && *p != '\t') {
 			/* no white space - bad header name format */
 			if(likely(logmode)) {
-				LM_ERR("invalid header name for [%.*s]\n", (int)(end - begin),
+				LOG(cfg_get(core, core_cfg, sip_parser_log),
+						"invalid header name for [%.*s]\n", (int)(end - begin),
 						begin);
 			}
 			hdr->type = HDR_ERROR_T;

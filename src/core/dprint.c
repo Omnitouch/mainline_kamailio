@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -826,6 +828,14 @@ void ksr_slog_init(char *ename)
 			}
 		}
 	}
+}
+
+/**
+ *
+ */
+void km_slog_func_set(ksr_slog_f f)
+{
+	_ksr_slog_func = f;
 }
 
 static void log_callid_set(sip_msg_t *msg)

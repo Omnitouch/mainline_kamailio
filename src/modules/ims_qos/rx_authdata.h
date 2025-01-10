@@ -27,6 +27,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -49,6 +51,8 @@
 
 #ifndef RX_AUTH_DATA_H
 #define RX_AUTH_DATA_H
+
+#include "../../modules/ims_dialog/dlg_load.h"
 
 extern struct tm_binds tmb;
 extern struct cdp_binds cdpb;

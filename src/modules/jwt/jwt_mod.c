@@ -65,39 +65,45 @@ typedef struct jwt_fcache
 
 static jwt_fcache_t *_jwt_fcache_list = NULL;
 
-static cmd_export_t cmds[] = {{"jwt_generate", (cmd_function)w_jwt_generate_4,
-									  4, fixup_spve_all, 0, ANY_ROUTE},
-		{"jwt_generate", (cmd_function)w_jwt_generate_3, 3, fixup_spve_all, 0,
-				ANY_ROUTE},
-		{"jwt_verify", (cmd_function)w_jwt_verify, 4, fixup_spve_all, 0,
-				ANY_ROUTE},
-		{"jwt_verify_key", (cmd_function)w_jwt_verify_key, 4, fixup_spve_all, 0,
-				ANY_ROUTE},
-		{0, 0, 0, 0, 0, 0}};
+/* clang-format off */
+static cmd_export_t cmds[] = {
+	{"jwt_generate", (cmd_function)w_jwt_generate_4, 4, fixup_spve_all, fixup_free_spve_all,
+			ANY_ROUTE},
+	{"jwt_generate", (cmd_function)w_jwt_generate_3, 3, fixup_spve_all, fixup_free_spve_all,
+			ANY_ROUTE},
+	{"jwt_verify", (cmd_function)w_jwt_verify, 4, fixup_spve_all, fixup_free_spve_all,
+			ANY_ROUTE},
+	{"jwt_verify_key", (cmd_function)w_jwt_verify_key, 4, fixup_spve_all, fixup_free_spve_all,
+			ANY_ROUTE},
+	{0, 0, 0, 0, 0, 0}
+};
 
-static param_export_t params[] = {{"key_mode", PARAM_INT, &_jwt_key_mode},
-
-		{0, 0, 0}};
+static param_export_t params[] = {
+	{"key_mode", PARAM_INT, &_jwt_key_mode},
+	{0, 0, 0}
+};
 
 static int jwt_pv_get(sip_msg_t *msg, pv_param_t *param, pv_value_t *res);
 static int jwt_pv_parse_name(pv_spec_t *sp, str *in);
 static pv_export_t mod_pvs[] = {
-		{{"jwt", sizeof("jwt") - 1}, PVT_OTHER, jwt_pv_get, 0,
-				jwt_pv_parse_name, 0, 0, 0},
-		{{0, 0}, 0, 0, 0, 0, 0, 0, 0}};
+	{{"jwt", sizeof("jwt") - 1}, PVT_OTHER, jwt_pv_get, 0,
+			jwt_pv_parse_name, 0, 0, 0},
+	{{0, 0}, 0, 0, 0, 0, 0, 0, 0}
+};
 
 struct module_exports exports = {
-		"jwt",			 /* module name */
-		DEFAULT_DLFLAGS, /* dlopen flags */
-		cmds,			 /* cmd (cfg function) exports */
-		params,			 /* param exports */
-		0,				 /* RPC method exports */
-		mod_pvs,		 /* pseudo-variables exports */
-		0,				 /* response handling function */
-		mod_init,		 /* module init function */
-		child_init,		 /* per-child init function */
-		mod_destroy		 /* module destroy function */
+	"jwt",			 /* module name */
+	DEFAULT_DLFLAGS, /* dlopen flags */
+	cmds,			 /* cmd (cfg function) exports */
+	params,			 /* param exports */
+	0,				 /* RPC method exports */
+	mod_pvs,		 /* pseudo-variables exports */
+	0,				 /* response handling function */
+	mod_init,		 /* module init function */
+	child_init,		 /* per-child init function */
+	mod_destroy		 /* module destroy function */
 };
+/* clang-format on */
 
 
 /**
@@ -437,6 +443,7 @@ static int ki_jwt_verify_key(
 	jwt_valid_t *jwt_valid = NULL;
 	str sparams = STR_NULL;
 	long lval = 0;
+	unsigned int jwtret = 0;
 
 	if(key == NULL || key->s == NULL || alg == NULL || alg->s == NULL
 			|| claims == NULL || claims->s == NULL || claims->len <= 0
@@ -498,12 +505,13 @@ static int ki_jwt_verify_key(
 	ret = jwt_decode(
 			&jwt, jwtval->s, (unsigned char *)kdata.s, (size_t)kdata.len);
 	if(ret != 0 || jwt == NULL) {
-		LM_ERR("failed to decode jwt value\n");
+		LM_ERR("failed to decode jwt value (ret: %d jwt: %p)\n", ret, jwt);
 		goto error;
 	}
-	if(jwt_validate(jwt, jwt_valid) != 0) {
+	if((jwtret = jwt_validate(jwt, jwt_valid)) != JWT_VALIDATION_SUCCESS) {
 		_jwt_verify_status = jwt_valid_get_status(jwt_valid);
-		LM_ERR("failed to validate jwt: %08x\n", _jwt_verify_status);
+		LM_ERR("failed to validate jwt: %08x (ret: %08x)\n", _jwt_verify_status,
+				jwtret);
 		goto error;
 	}
 

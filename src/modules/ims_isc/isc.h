@@ -27,6 +27,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -68,8 +70,8 @@ extern int isc_fr_inv_timeout; /**< default ISC INVITE response timeout in ms */
 /**	SIP Status Code to send to client on Session Termination because AS did not respond */
 
 
-int isc_forward(
-		struct sip_msg *msg, isc_match *m, isc_mark *mark, int firstflag);
+int isc_forward(struct sip_msg *msg, isc_match *m, isc_mark *mark,
+		enum isc_mark_status status);
 
 
 #endif

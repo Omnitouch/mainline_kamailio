@@ -4,6 +4,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -237,14 +239,33 @@ static int parse_db_url(struct db_id *id, const str *url)
 						break;
 
 					case '/':
-						id->host = prev_token;
-						prev_token = 0;
-						id->port = str2s(begin, url->s + i - begin, 0);
-						if(dupl_string_name(
-								   &id->database, url->s + i + 1, url->s + len)
-								< 0)
-							goto err;
-						return 0;
+						/* go to last '@' when '/' is part of a password */
+						a = 0;
+						for(j = i + 1; j < len; j++) {
+							if(url->s[j] == '@') {
+								a = j;
+							}
+						}
+						if(a != 0) {
+							st = ST_HOST;
+							id->username = prev_token;
+							prev_token = 0;
+							i = a;
+							if(dupl_string(&id->password, begin, url->s + i)
+									< 0)
+								goto err;
+							begin = url->s + i + 1;
+							break;
+						} else {
+							id->host = prev_token;
+							prev_token = 0;
+							id->port = str2s(begin, url->s + i - begin, 0);
+							if(dupl_string_name(&id->database, url->s + i + 1,
+									   url->s + len)
+									< 0)
+								goto err;
+							return 0;
+						}
 				}
 				break;
 

@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -148,7 +150,8 @@ int ul_ka_urecord(urecord_t *ur)
 			}
 		}
 
-		if(ul_keepalive_timeout > 0 && uc->last_keepalive > 0) {
+		if(ul_keepalive_timeout > 0 && uc->last_keepalive > 0
+				&& (uc->flags & FL_KASENT)) {
 			if(uc->last_keepalive + ul_keepalive_timeout < tnow) {
 				/* set contact as expired in 10s */
 				LM_DBG("set expired contact on keepalive (%u + %u < %u)"
@@ -257,7 +260,9 @@ int ul_ka_urecord(urecord_t *ur)
 					kabuf_len, kabuf);
 			kamsg.s = kabuf;
 			kamsg.len = kabuf_len;
-			ul_ka_send(&kamsg, &idst);
+			if(ul_ka_send(&kamsg, &idst) >= 0) {
+				uc->flags |= FL_KASENT;
+			}
 		}
 	}
 	return 0;

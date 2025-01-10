@@ -6,6 +6,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -109,6 +111,10 @@ extern int ksr_tcp_script_mode;
 #ifdef USE_TLS
 extern int tls_disable;
 extern unsigned short tls_port_no;
+#define KSR_TLS_THREADS_MNONE 0 /* no set of set thread-local variables */
+#define KSR_TLS_THREADS_MTEMP \
+	1 /* set thread-local variables in temp thread; deprecated and unused for 6.x */
+#define KSR_TLS_THREADS_MFORK 2 /* set thread-local variables in at-fork */
 extern int ksr_tls_threads_mode;
 #endif
 #ifdef USE_SCTP

@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -56,8 +58,8 @@ int pv_tuple_set(
 	sr_xavp_t *tuples_root;
 	sr_xavp_t *tuple;
 	sr_xavp_t *th, *new, *old, *prv = NULL;
-	sr_xavp_t *tuple_xavp;
-	sr_xavp_t *elem_xavp;
+	sr_xavp_t *tuple_xavp = NULL;
+	sr_xavp_t *elem_xavp = NULL;
 	sr_xval_t tuple_val;
 	pv_param_t p;
 	pv_value_t empty;

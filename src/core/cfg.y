@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -334,6 +336,7 @@ extern char *default_routename;
 %token ADVERTISE
 %token VIRTUAL
 %token STRNAME
+%token AGNAME
 %token ALIAS
 %token SR_AUTO_ALIASES
 %token DOMAIN
@@ -396,6 +399,8 @@ extern char *default_routename;
 %token ASYNC_USLEEP
 %token ASYNC_NONBLOCK
 %token ASYNC_WORKERS_GROUP
+%token ASYNC_TKV_GNAME
+%token ASYNC_TKV_EVCB
 %token CHECK_VIA
 %token PHONE2TEL
 %token MEMLOG
@@ -879,6 +884,11 @@ socket_lattr:
 			tmp_sa.useaddr.len = strlen(tmp_sa.useaddr.s);
 			tmp_sa.useport = $7;
 		}
+	| AGNAME EQUAL STRING {
+			tmp_sa.agname.s = $3;
+			tmp_sa.agname.len = strlen(tmp_sa.agname.s);
+		}
+	| AGNAME EQUAL error { yyerror("string value expected"); }
 	| WORKERS EQUAL NUMBER { tmp_sa.workers=$3; }
 	| WORKERS EQUAL error { yyerror("number expected"); }
 	| VIRTUAL EQUAL NUMBER { if($3!=0) { tmp_sa.sflags |= SI_IS_VIRTUAL; } }
@@ -999,8 +1009,14 @@ assign_stm:
 		ksr_ipv6_hex_style.len = strlen(ksr_ipv6_hex_style.s);
 	}
 	| IPV6_HEX_STYLE error { yyerror("string value expected"); }
-	| BIND_IPV6_LINK_LOCAL EQUAL NUMBER {sr_bind_ipv6_link_local = $3;}
-	| BIND_IPV6_LINK_LOCAL error { yyerror("boolean value expected"); }
+	| BIND_IPV6_LINK_LOCAL EQUAL NUMBER {
+		sr_bind_ipv6_link_local = $3;
+		if((sr_bind_ipv6_link_local & KSR_IPV6_LINK_LOCAL_BIND)
+				&& (sr_bind_ipv6_link_local & KSR_IPV6_LINK_LOCAL_SKIP)) {
+			yyerror("incompatible modes set");
+		}
+	}
+	| BIND_IPV6_LINK_LOCAL error { yyerror("number expected"); }
 	| DST_BLST_INIT EQUAL NUMBER   { IF_DST_BLOCKLIST(dst_blocklist_init=$3); }
 	| DST_BLST_INIT error { yyerror("boolean value expected"); }
 	| USE_DST_BLST EQUAL NUMBER {
@@ -1076,6 +1092,10 @@ assign_stm:
 	| ASYNC_NONBLOCK EQUAL error { yyerror("number expected"); }
 	| ASYNC_WORKERS_GROUP EQUAL STRING { async_task_set_workers_group($3); }
 	| ASYNC_WORKERS_GROUP EQUAL error { yyerror("string expected"); }
+	| ASYNC_TKV_GNAME EQUAL STRING { async_tkv_gname_set($3); }
+	| ASYNC_TKV_GNAME EQUAL error { yyerror("string expected"); }
+	| ASYNC_TKV_EVCB EQUAL STRING { async_tkv_evcb_set($3); }
+	| ASYNC_TKV_EVCB EQUAL error { yyerror("string expected"); }
 	| CHECK_VIA EQUAL NUMBER { check_via=$3; }
 	| CHECK_VIA EQUAL error { yyerror("boolean value expected"); }
 	| PHONE2TEL EQUAL NUMBER { phone2tel=$3; }
@@ -3193,7 +3213,8 @@ attr_id_any_str:
 	| STRING {
 		avp_spec_t *avp_spec;
 		str s;
-		int type, idx;
+		avp_flags_t type;
+		int  idx;
 		avp_spec = pkg_malloc(sizeof(*avp_spec));
 		if (!avp_spec) {
 			yyerror("Not enough memory");

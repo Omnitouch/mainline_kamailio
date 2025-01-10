@@ -87,7 +87,9 @@ static int max_reconnect_attempts = 1;
 static int timeout_sec = 1;
 static int timeout_usec = 0;
 static int direct_reply_to = 0;
+#if AMQP_VERSION_MAJOR == 0 && AMQP_VERSION_MINOR < 13
 static int amqp_ssl_init_called = 0;
+#endif
 
 /* module helper functions */
 static int rabbitmq_connect(amqp_connection_state_t *conn);
@@ -125,34 +127,40 @@ static int rbmq_fixup_free_params(void **param, int param_no)
 	return -1;
 }
 
+/* clang-format off */
 /* module commands */
 static cmd_export_t cmds[] = {
-		{"rabbitmq_publish", (cmd_function)rabbitmq_publish, 4, fixup_spve_all,
-				fixup_free_spve_all, ANY_ROUTE},
-		{"rabbitmq_publish_consume", (cmd_function)rabbitmq_publish_consume, 5,
-				rbmq_fixup_params, rbmq_fixup_free_params, REQUEST_ROUTE},
-		{0, 0, 0, 0, 0, 0}};
+	{"rabbitmq_publish", (cmd_function)rabbitmq_publish, 4,
+		fixup_spve_all, fixup_free_spve_all, ANY_ROUTE},
+	{"rabbitmq_publish_consume", (cmd_function)rabbitmq_publish_consume, 5,
+		rbmq_fixup_params, rbmq_fixup_free_params, REQUEST_ROUTE},
+	{0, 0, 0, 0, 0, 0}
+};
 
 /* module parameters */
-static param_export_t params[] = {{"url", PARAM_STRING, &amqp_url},
-		{"amqps_ca_file", PARAM_STRING, &rmq_amqps_ca_file},
-		{"timeout_sec", PARAM_INT, &timeout_sec},
-		{"timeout_usec", PARAM_INT, &timeout_usec},
-		{"direct_reply_to", PARAM_INT, &direct_reply_to}, {0, 0, 0}};
+static param_export_t params[] = {
+	{"url", PARAM_STRING, &amqp_url},
+	{"amqps_ca_file", PARAM_STRING, &rmq_amqps_ca_file},
+	{"timeout_sec", PARAM_INT, &timeout_sec},
+	{"timeout_usec", PARAM_INT, &timeout_usec},
+	{"direct_reply_to", PARAM_INT, &direct_reply_to},
+	{0, 0, 0}
+};
 
 /* module exports */
 struct module_exports exports = {
-		"rabbitmq",		 /* module name */
-		DEFAULT_DLFLAGS, /* dlopen flags */
-		cmds,			 /* exported functions */
-		params,			 /* exported parameters */
-		0,				 /* RPC method exports */
-		0,				 /* exported pseudo-variables */
-		0,				 /* response handling function */
-		mod_init,		 /* module initialization function */
-		mod_child_init,	 /* per-child init function */
-		0				 /* module destroy function */
+	"rabbitmq",      /* module name */
+	DEFAULT_DLFLAGS, /* dlopen flags */
+	cmds,            /* exported functions */
+	params,          /* exported parameters */
+	0,               /* RPC method exports */
+	0,               /* exported pseudo-variables */
+	0,               /* response handling function */
+	mod_init,        /* module initialization function */
+	mod_child_init,  /* per-child init function */
+	0                /* module destroy function */
 };
+/* clang-format on */
 
 /* module init */
 static int mod_init(void)
@@ -569,12 +577,14 @@ static int rabbitmq_connect(amqp_connection_state_t *conn)
 	int log_ret;
 	//	amqp_rpc_reply_t reply;
 
+#if AMQP_VERSION_MAJOR == 0 && AMQP_VERSION_MINOR < 13
 	// amqp_ssl_init_called should only be called once
 	if(amqp_info.ssl && !amqp_ssl_init_called) {
 		amqp_set_initialize_ssl_library(1);
 		amqp_ssl_init_called = 1;
 		LM_DBG("AMQP SSL library initialized\n");
 	}
+#endif
 
 	// establish a new connection to RabbitMQ server
 	*conn = amqp_new_connection();
