@@ -1639,6 +1639,9 @@ str *cscf_get_service_route(struct sip_msg *msg, int *size, int is_shm)
 				&& strncasecmp(h->name.s, "Service-Route", 13) == 0) {
 			if(parse_rr(h) < 0) {
 				LM_ERR("Error parsing as Route header\n");
+				/* Make sure that next loop uses the 
+				 * next h instead of the same one */
+				h = h->next;
 				continue;
 			}
 			r = (rr_t *)h->parsed;
@@ -1651,6 +1654,9 @@ str *cscf_get_service_route(struct sip_msg *msg, int *size, int is_shm)
 			}
 			if(!k) {
 				LM_DBG("No items in this Service-Route\n");
+				/* Make sure that next loop uses the 
+				 * next h instead of the same one */
+				h = h->next;
 				continue;
 			}
 			x = pkg_reallocxf(x, (*size + k) * sizeof(str));
