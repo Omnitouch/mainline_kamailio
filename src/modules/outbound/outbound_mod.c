@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -40,10 +42,6 @@
 #include "../../core/parser/parse_uri.h"
 #include "../../core/parser/parse_supported.h"
 
-#define KSR_RTHREAD_SKIP_P
-#define KSR_RTHREAD_NEED_V
-#include "../../core/rthreads.h"
-
 #include "api.h"
 #include "config.h"
 
@@ -59,25 +57,32 @@ static unsigned int ob_force_no_flag = (unsigned int)-1;
 static str ob_key = {0, 0};
 static str flow_token_secret = {0, 0};
 
+/* clang-format off */
 static cmd_export_t cmds[] = {
-		{"bind_ob", (cmd_function)bind_ob, 1, 0, 0, 0}, {0, 0, 0, 0, 0, 0}};
+	{"bind_ob", (cmd_function)bind_ob, 1, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0}
+};
 
 static param_export_t params[] = {
-		{"force_outbound_flag", PARAM_INT, &ob_force_flag},
-		{"force_no_outbound_flag", PARAM_INT, &ob_force_no_flag},
-		{"flow_token_secret", PARAM_STRING, &flow_token_secret}, {0, 0, 0}};
+	{"force_outbound_flag", PARAM_INT, &ob_force_flag},
+	{"force_no_outbound_flag", PARAM_INT, &ob_force_no_flag},
+	{"flow_token_secret", PARAM_STRING, &flow_token_secret},
+	{0, 0, 0}
+};
 
 struct module_exports exports = {
-		"outbound", DEFAULT_DLFLAGS, /* dlopen flags */
-		cmds,						 /* exported functions */
-		params,						 /* exported parameters */
-		0,							 /* exported·RPC·methods */
-		0,							 /* exported pseudo-variables */
-		0,							 /* response·function */
-		mod_init,					 /* module initialization function */
-		0,							 /* per-child initialization function */
-		destroy						 /* destroy function */
+	"outbound",
+	DEFAULT_DLFLAGS,    /* dlopen flags */
+	cmds,               /* exported functions */
+	params,             /* exported parameters */
+	0,                  /* RPC method exports */
+	0,                  /* exported pseudo-variables */
+	0,                  /* response handling function */
+	mod_init,           /* module initialization function */
+	0,                  /* per-child init function */
+	destroy             /* module destroy function */
 };
+/* clang-format on */
 
 static void mod_init_openssl(void)
 {
@@ -118,11 +123,7 @@ static int mod_init(void)
 	}
 	ob_key.len = OB_KEY_LEN;
 
-#if OPENSSL_VERSION_NUMBER < 0x010101000L
 	mod_init_openssl();
-#else
-	run_threadV(mod_init_openssl);
-#endif
 
 	if(cfg_declare("outbound", outbound_cfg_def, &default_outbound_cfg,
 			   cfg_sizeof(outbound), &outbound_cfg)) {

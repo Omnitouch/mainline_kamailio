@@ -25,6 +25,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -114,7 +116,7 @@ void update_auth_session_timers(cdp_auth_session_t *x, AAAMessage *msg)
 	} else {
 		if(!avp) {
 			LM_DBG("using timers from our request as there is nothing in the "
-				   "response (lifetime) - last requested lifetime was [%d]\n",
+				   "response (lifetime) - last requested lifetime was [%ld]\n",
 					x->last_requested_lifetime);
 			if(x->last_requested_lifetime > 0) {
 				update_lifetime = 1;
@@ -384,7 +386,7 @@ int auth_client_statefull_sm_process(
 
 			switch(event) {
 				case AUTH_EV_SEND_REQ:
-					// if the request is STR i should move to Discon ..
+					// if the request is STR I should move to Discon ..
 					// this is not in the state machine but I (Alberto Diez) need it
 					if(msg->commandCode == IMS_STR)
 						s->u.auth.state = AUTH_ST_DISCON;
@@ -394,41 +396,48 @@ int auth_client_statefull_sm_process(
 					}
 					break;
 
+				case AUTH_EV_SEND_ANS:
+					LM_DBG("auth_client_statefull_sm_process(): Sending "
+						   "answer while in state %s\n",
+							auth_states[x->state]);
+					break;
+
+
+				case AUTH_EV_RECV_REQ:
+					LM_DBG("auth_client_statefull_sm_process(): Received "
+						   "request while in state %s\n",
+							auth_states[x->state]);
+					break;
+
 				case AUTH_EV_RECV_ANS_SUCCESS:
 					x->state = AUTH_ST_OPEN;
 					update_auth_session_timers(x, msg);
-					//LM_INFO("state machine: i was in open and i am going to open\n");
 					break;
 
 				case AUTH_EV_RECV_ANS_UNSUCCESS:
 					x->state = AUTH_ST_DISCON;
-					//LM_INFO("state machine: i was in open and i am going to discon\n");
 					break;
 
 				case AUTH_EV_SESSION_TIMEOUT:
 				case AUTH_EV_SERVICE_TERMINATED:
 				case AUTH_EV_SESSION_GRACE_TIMEOUT:
 					x->state = AUTH_ST_DISCON;
-					//LM_INFO("state machine: i was in open and i am going to discon\n");
-
 					Send_STR(s, msg);
 					break;
 
 				case AUTH_EV_SEND_ASA_SUCCESS:
 					x->state = AUTH_ST_DISCON;
-					//LM_INFO("state machine: i was in open and i am going to discon\n");
 					Send_STR(s, msg);
 					break;
 
 				case AUTH_EV_SEND_ASA_UNSUCCESS:
 					x->state = AUTH_ST_OPEN;
 					update_auth_session_timers(x, msg);
-					//LM_INFO("state machine: i was in open and i am going to open\n");
 					break;
 
 				case AUTH_EV_RECV_ASR:
 					// two cases , client will comply or will not
-					// our client is very nice and always complys.. because
+					// our client is very nice and always complies.. because
 					// our brain is in the PCRF... if he says to do this , we do it
 					// Alberto Diez , (again this is not Diameter RFC)
 					x->state = AUTH_ST_DISCON;
@@ -795,8 +804,7 @@ int dup_routing_avps(AAAMessage *src, AAAMessage *dest)
 			if(AAAAddAVPToMessage(dest, avp, dest->avpList.tail)
 					!= AAA_ERR_SUCCESS) {
 				LM_ERR("dup_routing_avps: Failed adding Destination Realm avp "
-					   "to "
-					   "message\n");
+					   "to message\n");
 				AAAFreeAVP(&avp);
 				goto error;
 			}
@@ -931,6 +939,18 @@ void Send_STR(cdp_session_t *s, AAAMessage *msg)
 			   "Group!\n");
 		AAAFreeMessage(&str);
 		return;
+	}
+
+	if(s->dest_host.len) {
+		/* Add Destination-Host AVP, if not already there */
+		avp = AAAFindMatchingAVP(str, str->avpList.head, AVP_Destination_Host,
+				0, AAA_FORWARD_SEARCH);
+		if(!avp) {
+			// Add Destination-Host AVP
+			avp = AAACreateAVP(AVP_Destination_Host, AAA_AVP_FLAG_MANDATORY, 0,
+					s->dest_host.s, s->dest_host.len, AVP_DUPLICATE_DATA);
+			AAAAddAVPToMessage(str, avp, str->avpList.tail);
+		}
 	}
 
 	//Richard added this - if timers expire dest realm is not here!

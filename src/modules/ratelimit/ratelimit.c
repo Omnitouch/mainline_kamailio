@@ -6,6 +6,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -59,9 +61,6 @@ MODULE_VERSION
 #define RXLS(m, str, i) (int)((m)[i].rm_eo - (m)[i].rm_so), (str) + (m)[i].rm_so
 #define RXL(m, str, i) (int)((m)[i].rm_eo - (m)[i].rm_so)
 #define RXS(m, str, i) (str) + (m)[i].rm_so
-
-static inline int str_cmp(const str *a, const str *b);
-static inline int str_i_cmp(const str *a, const str *b);
 
 typedef struct str_map
 {
@@ -215,39 +214,42 @@ static int ki_rl_check_pipe(struct sip_msg *msg, int pipe);
 static int set_load_source(modparam_t, void *);
 */
 static void destroy(void);
-
+/* clang-format off */
 static cmd_export_t cmds[] = {
-		{"rl_check", (cmd_function)w_rl_check_default, 0, 0, 0, ANY_ROUTE},
-		{"rl_check", (cmd_function)w_rl_check_forced, 1, fixup_igp_null,
-				fixup_free_pvar_null, REQUEST_ROUTE | LOCAL_ROUTE},
-		{"rl_check_pipe", (cmd_function)w_rl_check_forced_pipe, 1,
-				fixup_igp_null, 0, ANY_ROUTE},
-		{0, 0, 0, 0, 0, 0}};
+	{"rl_check", (cmd_function)w_rl_check_default, 0, 0, 0, ANY_ROUTE},
+	{"rl_check", (cmd_function)w_rl_check_forced, 1,
+		fixup_igp_null,	fixup_free_pvar_null, REQUEST_ROUTE | LOCAL_ROUTE},
+	{"rl_check_pipe", (cmd_function)w_rl_check_forced_pipe, 1,
+		fixup_igp_null, fixup_free_igp_null, ANY_ROUTE},
+	{0, 0, 0, 0, 0, 0}
+};
+
 static param_export_t params[] = {
-		{"timer_interval", INT_PARAM, &timer_interval},
-		{"queue", PARAM_STRING | USE_FUNC_PARAM, (void *)add_queue_params},
-		{"pipe", PARAM_STRING | USE_FUNC_PARAM, (void *)add_pipe_params},
-		/* RESERVED for future use
-	{"load_source",    PARAM_STRING|USE_FUNC_PARAM, (void *)set_load_source},
+	{"timer_interval", PARAM_INT, &timer_interval},
+	{"queue", PARAM_STRING | PARAM_USE_FUNC, (void *)add_queue_params},
+	{"pipe", PARAM_STRING | PARAM_USE_FUNC, (void *)add_pipe_params},
+	/* RESERVED for future use
+	{"load_source",    PARAM_STRING|PARAM_USE_FUNC, (void *)set_load_source},
 	*/
-		{0, 0, 0}};
+	{0, 0, 0}
+};
 
 static rpc_export_t rpc_methods[];
 
 /** module exports */
 struct module_exports exports = {
-		"ratelimit",	 /* module name */
-		DEFAULT_DLFLAGS, /* dlopen flags */
-		cmds,			 /* cmd (cfg function) exports */
-		params,			 /* param exports */
-		0,				 /* exported RPC functions */
-		0,				 /* exported pseudo-variables */
-		0,				 /* response handling function */
-		mod_init,		 /* module initialization function */
-		0,				 /* per-child init function */
-		destroy			 /* module exit function */
+	"ratelimit",     /* module name */
+	DEFAULT_DLFLAGS, /* dlopen flags */
+	cmds,            /* exported functions */
+	params,          /* exported parameters */
+	0,               /* RPC method exports */
+	0,               /* exported pseudo-variables */
+	0,               /* response handling function */
+	mod_init,        /* module initialization function */
+	0,               /* per-child init function */
+	destroy          /* module destroy function */
 };
-
+/* clang-format on */
 
 /**
  * converts a mapped str to an int
@@ -256,7 +258,7 @@ struct module_exports exports = {
 static int str_map_str(const str_map_t *map, const str *key, int *ret)
 {
 	for(; map->str.s; map++)
-		if(!str_cmp(&map->str, key)) {
+		if(!str_strcmp(&map->str, key)) {
 			*ret = map->id;
 			return 0;
 		}
@@ -704,16 +706,6 @@ static void destroy(void)
 }
 
 
-static inline int str_cmp(const str *a, const str *b)
-{
-	return !(a->len == b->len && !strncmp(a->s, b->s, a->len));
-}
-
-static inline int str_i_cmp(const str *a, const str *b)
-{
-	return !(a->len == b->len && !strncasecmp(a->s, b->s, a->len));
-}
-
 str queue_other = str_init("*");
 
 /**
@@ -727,10 +719,10 @@ static int find_queue(struct sip_msg *msg, str *method, int *queue)
 
 	*queue = -1;
 	for(i = 0; i < *nqueues; i++)
-		if(!str_i_cmp(queues[i].method, method)) {
+		if(!str_strcasecmp(queues[i].method, method)) {
 			*queue = i;
 			return 0;
-		} else if(!str_i_cmp(queues[i].method, &queue_other)) {
+		} else if(!str_strcasecmp(queues[i].method, &queue_other)) {
 			*queue = i;
 		}
 

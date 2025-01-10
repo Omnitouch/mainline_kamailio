@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -76,7 +78,7 @@ static int pv_parse_evr_name(pv_spec_p sp, str *in);
 
 /* clang-format off */
 static param_export_t params[] = {
-	{"exec", PARAM_STRING | USE_FUNC_PARAM, (void *)evrexec_param},
+	{"exec", PARAM_STRING | PARAM_USE_FUNC, (void *)evrexec_param},
 	{0, 0, 0}
 };
 
@@ -324,10 +326,6 @@ void evrexec_process_socket(evrexec_task_t *it, int idx)
 			}
 		}
 		memset(&_evrexec_info, 0, sizeof(evrexec_info_t));
-	}
-	/* avoid exiting the process */
-	while(1) {
-		sleep(3600);
 	}
 }
 

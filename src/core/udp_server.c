@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -415,6 +417,14 @@ int udp_init(struct socket_info *sock_info)
 	unsigned char m_ttl, m_loop;
 #endif
 	addr = &sock_info->su;
+	if((addr->s.sa_family == AF_INET6)
+			&& (sr_bind_ipv6_link_local & KSR_IPV6_LINK_LOCAL_SKIP)
+			&& IN6_IS_ADDR_LINKLOCAL(&addr->sin6.sin6_addr)) {
+		LM_DBG("skip binding on %s (mode: %d)\n", sock_info->address_str.s,
+				sr_bind_ipv6_link_local);
+		return 0;
+	}
+
 	/*
 	addr=(union sockaddr_union*)pkg_malloc(sizeof(union sockaddr_union));
 	if (addr==0){
@@ -457,8 +467,9 @@ int udp_init(struct socket_info *sock_info)
 			LM_WARN("setsockopt v6 tos: %s\n", strerror(errno));
 			/* continue since this is not critical */
 		}
-		if(sr_bind_ipv6_link_local != 0) {
-			LM_INFO("setting scope of %s\n", sock_info->address_str.s);
+		if(sr_bind_ipv6_link_local & KSR_IPV6_LINK_LOCAL_BIND) {
+			LM_INFO("setting scope of %s (bind mode: %d)\n",
+					sock_info->address_str.s, sr_bind_ipv6_link_local);
 			addr->sin6.sin6_scope_id =
 					ipv6_get_netif_scope(sock_info->address_str.s);
 		}
@@ -1016,6 +1027,10 @@ void *ksr_udp_mtworker(void *si)
 	rcvi.dst_ip = tsock->address;
 	rcvi.proto = PROTO_UDP;
 
+	if(tsock->agroup.agname[0] != '\0') {
+		gname.s = tsock->agroup.agname;
+		gname.len = strlen(gname.s);
+	}
 	awg = async_task_group_find(&gname);
 
 	while(1) {
@@ -1054,10 +1069,16 @@ void *ksr_udp_mtworker(void *si)
 		rcvi.src_port = su_getport(fromaddr);
 
 		if(awg == NULL) {
+			if(tsock->agroup.agname[0] != '\0') {
+				gname.s = tsock->agroup.agname;
+				gname.len = strlen(gname.s);
+			}
 			awg = async_task_group_find(&gname);
 		}
-		if(awg == NULL) {
+		if(awg != NULL) {
 			udpworker_task_send(awg, buf, len, &rcvi);
+		} else {
+			LM_WARN("workers group [%s] not found\n", gname.s);
 		}
 	}
 }
@@ -1065,7 +1086,7 @@ void *ksr_udp_mtworker(void *si)
 /**
  *
  */
-int ksr_udp_start_mtreceiver(int child_rank, int *woneinit)
+int ksr_udp_start_mtreceiver(int child_rank, char *agname, int *woneinit)
 {
 	socket_info_t *si;
 	pthread_t *udpthreads = NULL;
@@ -1073,12 +1094,16 @@ int ksr_udp_start_mtreceiver(int child_rank, int *woneinit)
 	int rc = 0;
 	int i = 0;
 	int pid;
+	char si_desc[MAX_PT_DESC];
 
 	if(udp_listen == NULL) {
 		return 0;
 	}
 
-	pid = fork_process(child_rank, "UDP MULTITREADED RECEIVER", 1);
+	snprintf(si_desc, MAX_PT_DESC, "udp multithreaded receiver (%s)",
+			(agname) ? agname : "udp");
+
+	pid = fork_process(child_rank, si_desc, 1);
 	if(pid < 0) {
 		LM_CRIT("cannot fork\n");
 		goto error;
@@ -1100,7 +1125,12 @@ int ksr_udp_start_mtreceiver(int child_rank, int *woneinit)
 		}
 		/* udp workers */
 		for(si = udp_listen; si; si = si->next) {
-			nrthreads++;
+			if(agname == NULL) {
+				nrthreads++;
+			} else if((si->agroup.agname[0] != '\0')
+					  && (strcmp(agname, si->agroup.agname) == 0)) {
+				nrthreads++;
+			}
 		}
 		udpthreads = (pthread_t *)malloc(nrthreads * sizeof(pthread_t));
 		if(udpthreads == NULL) {
@@ -1110,6 +1140,11 @@ int ksr_udp_start_mtreceiver(int child_rank, int *woneinit)
 		memset(udpthreads, 0, nrthreads * sizeof(pthread_t));
 		i = 0;
 		for(si = udp_listen; si; si = si->next) {
+			if(!((agname == NULL)
+					   || ((si->agroup.agname[0] != '\0')
+							   && (strcmp(agname, si->agroup.agname) == 0)))) {
+				continue;
+			}
 			LM_DBG("creating udp thread worker[%d] [%.*s]\n", i,
 					si->sock_str.len, si->sock_str.s);
 			rc = pthread_create(

@@ -281,6 +281,7 @@ void pp_ifdef_level_error(void)
 				   " %d more #!endif as #!if[n]def\n",
 					(_pp_ifdef_level) * -1);
 		}
+		LM_ERR("note: #!endif requires EoL after it, even before EoF\n");
 	}
 }
 
@@ -289,7 +290,8 @@ void pp_ifdef_level_error(void)
  */
 void pp_define_core(void)
 {
-	char defval[64];
+#define PP_DEFINE_COREVAL_SIZE 64
+	char defval[PP_DEFINE_COREVAL_SIZE];
 	char *p;
 	int n;
 	str_list_t *sb;
@@ -301,8 +303,9 @@ void pp_define_core(void)
 		p++;
 	}
 
-	n = snprintf(p, 64 - (int)(p - defval), "_%u", VERSIONVAL / 1000000);
-	if(n < 0 || n >= 64 - (int)(p - defval)) {
+	n = snprintf(p, PP_DEFINE_COREVAL_SIZE - (int)(p - defval), "_%u",
+			VERSIONVAL / 1000000);
+	if(n < 0 || n >= PP_DEFINE_COREVAL_SIZE - (int)(p - defval)) {
 		LM_ERR("failed to build define token\n");
 		return;
 	}
@@ -312,9 +315,9 @@ void pp_define_core(void)
 		return;
 	}
 
-	n = snprintf(p, 64 - (int)(p - defval), "_%u_%u", VERSIONVAL / 1000000,
-			(VERSIONVAL % 1000000) / 1000);
-	if(n < 0 || n >= 64 - (int)(p - defval)) {
+	n = snprintf(p, PP_DEFINE_COREVAL_SIZE - (int)(p - defval), "_%u_%u",
+			VERSIONVAL / 1000000, (VERSIONVAL % 1000000) / 1000);
+	if(n < 0 || n >= PP_DEFINE_COREVAL_SIZE - (int)(p - defval)) {
 		LM_ERR("failed to build define token\n");
 		return;
 	}
@@ -324,9 +327,10 @@ void pp_define_core(void)
 		return;
 	}
 
-	n = snprintf(p, 64 - (int)(p - defval), "_%u_%u_%u", VERSIONVAL / 1000000,
-			(VERSIONVAL % 1000000) / 1000, VERSIONVAL % 1000);
-	if(n < 0 || n >= 64 - (int)(p - defval)) {
+	n = snprintf(p, PP_DEFINE_COREVAL_SIZE - (int)(p - defval), "_%u_%u_%u",
+			VERSIONVAL / 1000000, (VERSIONVAL % 1000000) / 1000,
+			VERSIONVAL % 1000);
+	if(n < 0 || n >= PP_DEFINE_COREVAL_SIZE - (int)(p - defval)) {
 		LM_ERR("failed to build define token\n");
 		return;
 	}
@@ -343,8 +347,8 @@ void pp_define_core(void)
 		return;
 	}
 
-	n = snprintf(defval, 64, "%u", VERSIONVAL);
-	if(n < 0 || n >= 64) {
+	n = snprintf(defval, PP_DEFINE_COREVAL_SIZE, "%u", VERSIONVAL);
+	if(n < 0 || n >= PP_DEFINE_COREVAL_SIZE) {
 		LM_ERR("failed to build version define value\n");
 		return;
 	}

@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -212,6 +214,24 @@ static int check_via_address(
 	return -1;
 }
 
+/* check if rport has to be added or updated in Via
+ * - return 1 on true; 0 on false */
+int rport_test(struct sip_msg *msg)
+{
+	if(msg->msg_flags & FL_VIA_NORECEIVED) {
+		return 0;
+	}
+	/* check if rport needs to be updated:
+	 *  - if FL_FORCE_RPORT is set add it (and del. any previous version)
+	 *  - if via already contains an rport add it and overwrite the previous
+	 *  rport value if present (if you don't want to overwrite the previous
+	 *  version remove the comments) */
+	if(((msg->msg_flags | global_req_flags) & FL_FORCE_RPORT)
+			|| (msg->via1->rport /*&& msg->via1->rport->value.s==0*/)) {
+		return 1;
+	}
+	return 0;
+}
 
 /* check if IP address in Via != source IP address of signaling,
  * or the sender requires adding rport or received values */
@@ -219,6 +239,9 @@ int received_test(struct sip_msg *msg)
 {
 	int rcvd;
 
+	if(msg->msg_flags & FL_VIA_NORECEIVED) {
+		return 0;
+	}
 	rcvd = msg->via1->received || msg->via1->rport
 		   || check_via_address(&msg->rcv.src_ip, &msg->via1->host,
 				   msg->via1->port, received_dns);
@@ -230,6 +253,9 @@ int received_via_test(struct sip_msg *msg)
 {
 	int rcvd;
 
+	if(msg->msg_flags & FL_VIA_NORECEIVED) {
+		return 0;
+	}
 	rcvd = (check_via_address(&msg->rcv.src_ip, &msg->via1->host,
 					msg->via1->port, received_dns)
 			!= 0);
@@ -607,7 +633,7 @@ static inline int lumps_len(
 			};                                                               \
 			break;                                                           \
 		case SUBST_RCV_PORT:                                                 \
-			if(msg->rcv.bind_address && STR_WITHVAL(recv_port_str)) {        \
+			if(STR_WITHVAL(recv_port_str)) {                                 \
 				new_len += recv_port_str->len;                               \
 			} else {                                                         \
 				LM_CRIT(" rcv port - null bind_address\n");                  \
@@ -704,10 +730,10 @@ static inline int lumps_len(
 			};                                                               \
 			break;                                                           \
 		case SUBST_SND_PORT:                                                 \
-			if(send_sock) {                                                  \
+			if(STR_WITHVAL(send_port_str)) {                                 \
 				new_len += send_port_str->len;                               \
 			} else {                                                         \
-				LM_CRIT("null send_sock\n");                                 \
+				LM_CRIT("null send sock port\n");                            \
 			};                                                               \
 			break;                                                           \
 		case SUBST_SND_PROTO:                                                \
@@ -748,8 +774,7 @@ static inline int lumps_len(
 									send_address_str->len)                   \
 								!= NULL))                                    \
 					new_len += 2;                                            \
-				if((send_sock->port_no != SIP_PORT)                          \
-						|| (send_port_str != &(send_sock->port_no_str))) {   \
+				if(STR_WITHVAL(send_port_str)) {                             \
 					/* add :port_no */                                       \
 					new_len += 1 + send_port_str->len;                       \
 				}                                                            \
@@ -815,12 +840,17 @@ static inline int lumps_len(
 		send_address_str = &(send_sock->address_str);
 		send_af = send_sock->address.af;
 	}
-	if(send_sock && send_sock->useinfo.port_no > 0)
-		send_port_str = &(send_sock->useinfo.port_no_str);
-	else if(msg->set_global_port.len)
+	if(send_sock && send_sock->useinfo.name.len > 0) {
+		if(send_sock->useinfo.port_no > 0) {
+			send_port_str = &(send_sock->useinfo.port_no_str);
+		}
+	} else if(msg->set_global_port.len) {
 		send_port_str = &(msg->set_global_port);
-	else
-		send_port_str = &(send_sock->port_no_str);
+	} else if(send_sock) {
+		if(send_sock->port_no != SIP_PORT) {
+			send_port_str = &(send_sock->port_no_str);
+		}
+	}
 	if(send_sock) {
 		if(send_sock->useinfo.proto != PROTO_NONE)
 			send_proto_id = send_sock->useinfo.proto;
@@ -836,9 +866,11 @@ static inline int lumps_len(
 			recv_address_str = &(msg->rcv.bind_address->address_str);
 			recv_af = msg->rcv.bind_address->address.af;
 		}
-		if(msg->rcv.bind_address->useinfo.port_no > 0) {
-			recv_port_str = &(msg->rcv.bind_address->useinfo.port_no_str);
-			recv_port_no = msg->rcv.bind_address->useinfo.port_no;
+		if(msg->rcv.bind_address->useinfo.name.len > 0) {
+			if(msg->rcv.bind_address->useinfo.port_no > 0) {
+				recv_port_str = &(msg->rcv.bind_address->useinfo.port_no_str);
+				recv_port_no = msg->rcv.bind_address->useinfo.port_no;
+			}
 		} else {
 			recv_port_str = &(msg->rcv.bind_address->port_no_str);
 			recv_port_no = msg->rcv.bind_address->port_no;
@@ -1027,7 +1059,7 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 			};                                                                 \
 			break;                                                             \
 		case SUBST_RCV_PORT:                                                   \
-			if(msg->rcv.bind_address && STR_WITHVAL(recv_port_str)) {          \
+			if(STR_WITHVAL(recv_port_str)) {                                   \
 				memcpy(new_buf + offset, recv_port_str->s,                     \
 						recv_port_str->len);                                   \
 				offset += recv_port_str->len;                                  \
@@ -1145,12 +1177,12 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 			};                                                                 \
 			break;                                                             \
 		case SUBST_SND_PORT:                                                   \
-			if(send_sock) {                                                    \
+			if(STR_WITHVAL(send_port_str)) {                                   \
 				memcpy(new_buf + offset, send_port_str->s,                     \
 						send_port_str->len);                                   \
 				offset += send_port_str->len;                                  \
 			} else {                                                           \
-				LM_CRIT("null send_sock\n");                                   \
+				LM_CRIT("null send sock port\n");                              \
 			};                                                                 \
 			break;                                                             \
 		case SUBST_SND_ALL:                                                    \
@@ -1175,8 +1207,7 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 					offset++;                                                  \
 				}                                                              \
 				/* :port */                                                    \
-				if((send_sock->port_no != SIP_PORT)                            \
-						|| (send_port_str != &(send_sock->port_no_str))) {     \
+				if(STR_WITHVAL(send_port_str)) {                               \
 					new_buf[offset] = ':';                                     \
 					offset++;                                                  \
 					memcpy(new_buf + offset, send_port_str->s,                 \
@@ -1343,12 +1374,17 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 		send_address_str = &(send_sock->address_str);
 		send_af = send_sock->address.af;
 	}
-	if(send_sock && send_sock->useinfo.port_no > 0)
-		send_port_str = &(send_sock->useinfo.port_no_str);
-	else if(msg->set_global_port.len)
+	if(send_sock && send_sock->useinfo.name.len > 0) {
+		if(send_sock->useinfo.port_no > 0) {
+			send_port_str = &(send_sock->useinfo.port_no_str);
+		}
+	} else if(msg->set_global_port.len) {
 		send_port_str = &(msg->set_global_port);
-	else
-		send_port_str = &(send_sock->port_no_str);
+	} else if(send_sock) {
+		if(send_sock->port_no != SIP_PORT) {
+			send_port_str = &(send_sock->port_no_str);
+		}
+	}
 	if(send_sock) {
 		if(send_sock->useinfo.proto != PROTO_NONE)
 			send_proto_id = send_sock->useinfo.proto;
@@ -1364,9 +1400,11 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 			recv_address_str = &(msg->rcv.bind_address->address_str);
 			recv_af = msg->rcv.bind_address->address.af;
 		}
-		if(msg->rcv.bind_address->useinfo.port_no > 0) {
-			recv_port_str = &(msg->rcv.bind_address->useinfo.port_no_str);
-			recv_port_no = msg->rcv.bind_address->useinfo.port_no;
+		if(msg->rcv.bind_address->useinfo.name.len > 0) {
+			if(msg->rcv.bind_address->useinfo.port_no > 0) {
+				recv_port_str = &(msg->rcv.bind_address->useinfo.port_no_str);
+				recv_port_no = msg->rcv.bind_address->useinfo.port_no;
+			}
 		} else {
 			recv_port_str = &(msg->rcv.bind_address->port_no_str);
 			recv_port_no = msg->rcv.bind_address->port_no;
@@ -2039,7 +2077,7 @@ char *build_req_buf_from_sip_req(struct sip_msg *msg,
 	struct lump *path_anchor;
 	struct lump *path_lump;
 	str branch;
-	unsigned int flags;
+	msg_flags_t flags;
 	unsigned int udp_mtu;
 	struct dest_info di;
 	int ret;
@@ -2108,13 +2146,8 @@ after_local_via:
 		}
 	}
 
-	/* check if rport needs to be updated:
-	 *  - if FL_FORCE_RPORT is set add it (and del. any previous version)
-	 *  - if via already contains an rport add it and overwrite the previous
-	 *  rport value if present (if you don't want to overwrite the previous
-	 *  version remove the comments) */
-	if((flags & FL_FORCE_RPORT)
-			|| (msg->via1->rport /*&& msg->via1->rport->value.s==0*/)) {
+	/* check if rport needs to be updated */
+	if(rport_test(msg)) {
 		if((rport_buf = rport_builder(msg, &rport_len)) == 0) {
 			LM_ERR("rport_builder failed\n");
 			goto error00; /* free everything */
@@ -2384,7 +2417,7 @@ char *generate_res_buf_from_sip_res(
 	}
 
 	/* test and add xavp via reply params */
-	if(msg && msg->via2 && (msg->msg_flags & FL_ADD_XAVP_VIA_REPLY_PARAMS)
+	if(msg->via2 && (msg->msg_flags & FL_ADD_XAVP_VIA_REPLY_PARAMS)
 			&& _ksr_xavp_via_reply_params.len > 0) {
 		xparams.s = pv_get_buffer();
 		xparams.len = xavp_serialize_fields_style(&_ksr_xavp_via_reply_params,
@@ -2518,8 +2551,7 @@ char *build_res_buf_from_sip_req(unsigned int code, str *text, str *new_tag,
 		}
 	}
 	/* check if rport needs to be updated */
-	if(((msg->msg_flags | global_req_flags) & FL_FORCE_RPORT)
-			|| (msg->via1->rport /*&& msg->via1->rport->value.s==0*/)) {
+	if(rport_test(msg)) {
 		if((rport_buf = rport_builder(msg, &rport_len)) == 0) {
 			LM_ERR("rport_builder failed\n");
 			goto error01; /* free everything */
@@ -2910,12 +2942,17 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 		}
 	}
 	if(port_str == NULL) {
-		if(hp && hp->port->len)
+		if(hp && hp->port->len) {
 			port_str = hp->port;
-		else if(send_sock->useinfo.port_no > 0)
-			port_str = &(send_sock->useinfo.port_no_str);
-		else
-			port_str = &(send_sock->port_no_str);
+		} else if(send_sock->useinfo.name.len > 0) {
+			if(send_sock->useinfo.port_no > 0) {
+				port_str = &(send_sock->useinfo.port_no_str);
+			}
+		} else {
+			if(send_sock->port_no != SIP_PORT) {
+				port_str = &(send_sock->port_no_str);
+			}
+		}
 	}
 	proto = PROTO_NONE;
 	if(msg && (msg->msg_flags & FL_USE_XAVP_VIA_FIELDS)
@@ -2959,7 +2996,7 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 	via_prefix_len = MY_VIA_LEN + (proto == PROTO_SCTP);
 	max_len = via_prefix_len + address_str->len /* space in MY_VIA */
 			  + 2 /* just in case it is a v6 address ... [ ] */
-			  + 1 /*':'*/ + port_str->len
+			  + 1 /*':'*/ + (port_str ? port_str->len : 0)
 			  + (branch ? (MY_BRANCH_LEN + branch->len) : 0)
 			  + (extra_params ? extra_params->len : 0) + comp_len
 			  + comp_name_len + CRLF_LEN + 1;
@@ -3044,8 +3081,7 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 	}
 	memcpy(line_buf + via_prefix_len + extra_len, address_str->s,
 			address_str->len);
-	if((send_sock->port_no != SIP_PORT)
-			|| (port_str != &send_sock->port_no_str)) {
+	if(port_str != NULL && port_str->len > 0) {
 		line_buf[via_len] = ':';
 		via_len++;
 		memcpy(line_buf + via_len, port_str->s, port_str->len);

@@ -25,6 +25,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -130,12 +132,13 @@ typedef struct _cdp_auth_session_t
 	time_t timeout;	 /**< absolute time for session timeout  -1 means forever */
 	time_t lifetime; /**< absolute time for auth lifetime -1 means forever */
 	time_t grace_period; /**< grace_period in seconds 	*/
-	unsigned int
-			last_requested_lifetime; /**< the following 3 timers are used to store what we are */
-	unsigned int
-			last_requested_timeout; /**<requesting in a request, if the answer does not have anything */
-	unsigned int
-			last_requested_grace; /**<different then we will use these values */
+
+	/** the following 3 timers are used to store what we are */
+	time_t last_requested_lifetime;
+	/** requesting in a request, if the answer does not have anything */
+	time_t last_requested_timeout;
+	/** different then we will use these values */
+	time_t last_requested_grace;
 
 	void *generic_data;
 } cdp_auth_session_t;

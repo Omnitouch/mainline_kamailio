@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -95,7 +97,7 @@ char *get_hdr_field(
 
 	tmp = parse_hname(buf, end, hdr);
 	if(hdr->type == HDR_ERROR_T) {
-		ERR("bad header\n");
+		LOG(cfg_get(core, core_cfg, sip_parser_log), "bad header\n");
 		goto error;
 	}
 
@@ -336,7 +338,8 @@ int parse_headers(
 		rest = get_hdr_field(tmp, end, hf);
 		switch(hf->type) {
 			case HDR_ERROR_T:
-				ERR("bad header field [%.*s]\n",
+				LOG(cfg_get(core, core_cfg, sip_parser_log),
+						"bad header field [%.*s]\n",
 						(end - tmp > 100) ? 100 : (int)(end - tmp), tmp);
 				goto error;
 			case HDR_EOH_T:

@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -147,6 +149,11 @@ int select_cfg_var(str *res, select_t *s, struct sip_msg *msg)
 	int i;
 	static char buf[INT2STR_MAX_LEN];
 
+	if(res != NULL) {
+		res->s = 0;
+		res->len = 0;
+	}
+
 	if(msg == NULL) {
 		/* fixup call */
 
@@ -207,7 +214,7 @@ int select_cfg_var(str *res, select_t *s, struct sip_msg *msg)
 	group = (cfg_group_t *)s->params[1].v.p;
 	var = (cfg_mapping_t *)s->params[2].v.p;
 
-	if(!group || !var)
+	if(!group || !var || !res)
 		return -1;
 
 	/* use the module's handle to access the variable, so the variables
@@ -228,12 +235,7 @@ int select_cfg_var(str *res, select_t *s, struct sip_msg *msg)
 			break;
 
 		case CFG_VAR_STR:
-			if(p) {
-				memcpy(res, p, sizeof(str));
-			} else {
-				res->s = 0;
-				res->len = 0;
-			}
+			memcpy(res, p, sizeof(str));
 			break;
 
 		default:

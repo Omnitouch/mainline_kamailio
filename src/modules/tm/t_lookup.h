@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -79,6 +81,10 @@ int get_t_branch(void);
 typedef void (*tsett_f)(struct cell *t, int branch);
 void set_t(struct cell *t, int branch);
 
+typedef void (*tm_get_tb_f)(struct cell **t, int *branch);
+void tm_get_tb(struct cell **t, int *branch);
+typedef void (*tm_set_tb_f)(struct cell *t, int branch);
+void tm_set_tb(struct cell *t, int branch);
 
 #define T_GET_TI "t_get_trans_ident"
 #define T_LOOKUP_IDENT "t_lookup_ident"

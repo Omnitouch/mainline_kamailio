@@ -7,6 +7,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -98,16 +100,6 @@ typedef struct str_map
 
 extern str_map_t algo_names[];
 
-static inline int str_cmp(const str *a, const str *b)
-{
-	return !(a->len == b->len && !strncmp(a->s, b->s, a->len));
-}
-
-static inline int str_i_cmp(const str *a, const str *b)
-{
-	return !(a->len == b->len && !strncasecmp(a->s, b->s, a->len));
-}
-
 /**
  * converts a mapped str to an int
  * \return	0 if found, -1 otherwise
@@ -115,7 +107,7 @@ static inline int str_i_cmp(const str *a, const str *b)
 static inline int str_map_str(const str_map_t *map, const str *key, int *ret)
 {
 	for(; map->str.s; map++)
-		if(!str_i_cmp(&map->str, key)) {
+		if(!str_strcasecmp(&map->str, key)) {
 			*ret = map->id;
 			return 0;
 		}

@@ -5,6 +5,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -310,6 +312,7 @@ LISTEN		listen
 ADVERTISE	advertise|ADVERTISE
 VIRTUAL		virtual
 STRNAME		name|NAME
+AGNAME		agname|AGNAME
 ALIAS		alias
 DOMAIN		domain
 SR_AUTO_ALIASES	auto_aliases
@@ -380,6 +383,8 @@ ASYNC_WORKERS async_workers
 ASYNC_USLEEP async_usleep
 ASYNC_NONBLOCK async_nonblock
 ASYNC_WORKERS_GROUP async_workers_group
+ASYNC_TKV_GNAME async_tkv_gname
+ASYNC_TKV_EVCB async_tkv_evcb
 CHECK_VIA	check_via
 PHONE2TEL	phone2tel
 MEMLOG		"memlog"|"mem_log"
@@ -770,6 +775,7 @@ IMPORTFILE      "import_file"
 <INITIAL>{ADVERTISE}	{ count(); yylval.strval=yytext; return ADVERTISE; }
 <INITIAL>{VIRTUAL}	{ count(); yylval.strval=yytext; return VIRTUAL; }
 <INITIAL>{STRNAME}	{ count(); yylval.strval=yytext; return STRNAME; }
+<INITIAL>{AGNAME}	{ count(); yylval.strval=yytext; return AGNAME; }
 <INITIAL>{ALIAS}	{ count(); yylval.strval=yytext; return ALIAS; }
 <INITIAL>{DOMAIN}	{ count(); yylval.strval=yytext; return DOMAIN; }
 <INITIAL>{SR_AUTO_ALIASES}	{ count(); yylval.strval=yytext;
@@ -872,6 +878,8 @@ IMPORTFILE      "import_file"
 <INITIAL>{ASYNC_USLEEP}	{ count(); yylval.strval=yytext; return ASYNC_USLEEP; }
 <INITIAL>{ASYNC_NONBLOCK}	{ count(); yylval.strval=yytext; return ASYNC_NONBLOCK; }
 <INITIAL>{ASYNC_WORKERS_GROUP}	{ count(); yylval.strval=yytext; return ASYNC_WORKERS_GROUP; }
+<INITIAL>{ASYNC_TKV_GNAME}	{ count(); yylval.strval=yytext; return ASYNC_TKV_GNAME; }
+<INITIAL>{ASYNC_TKV_EVCB}	{ count(); yylval.strval=yytext; return ASYNC_TKV_EVCB; }
 <INITIAL>{CHECK_VIA}	{ count(); yylval.strval=yytext; return CHECK_VIA; }
 <INITIAL>{PHONE2TEL}	{ count(); yylval.strval=yytext; return PHONE2TEL; }
 <INITIAL>{MEMLOG}	{ count(); yylval.strval=yytext; return MEMLOG; }

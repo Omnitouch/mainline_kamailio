@@ -27,6 +27,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -63,8 +65,8 @@ typedef struct saved_transaction
 	gen_lock_t *lock;
 	unsigned int ignore_replies;
 	unsigned int answers_not_received;
-	unsigned int
-			failed; //will start at 0 - if 1 fails we can set the flag up (1)
+	// will start at 0 - if 1 fails we can set the flag up (1)
+	unsigned int failed;
 	unsigned int tindex;
 	unsigned int tlabel;
 	unsigned int ticks;
