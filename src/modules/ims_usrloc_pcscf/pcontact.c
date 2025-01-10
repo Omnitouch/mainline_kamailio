@@ -27,6 +27,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -192,7 +194,7 @@ int new_pcontact(struct udomain *_d, str *_contact, struct pcontact_info *_ci,
 	memcpy(p, _contact->s, _contact->len);
 	p += _contact->len;
 	(*_c)->aor.len = _contact->len;
-	(*_c)->domain = (str *)_d;
+	(*_c)->domain = _d->name;
 
 	if(parse_uri((*_c)->aor.s, (*_c)->aor.len, &sip_uri) != 0) {
 		LM_ERR("unable to determine contact host from uri [%.*s\n",

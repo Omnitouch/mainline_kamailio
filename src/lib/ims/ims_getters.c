@@ -25,6 +25,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -538,6 +540,21 @@ str cscf_get_contact_from_requri(struct sip_msg *msg)
 done:
 	return pu;
 }
+
+/**
+ * Get the host from the Request URI of the message.
+ * Useful for example on MT, to get the destination from the Request URI, if P-Called-Party-ID is not present.
+ */
+str cscf_get_host_from_requri(struct sip_msg *msg)
+{
+	if(msg->first_line.type != SIP_REQUEST || parse_sip_msg_uri(msg) < 0
+			|| msg->parsed_uri.type == TEL_URI_T) {
+		str empty = {0};
+		return empty;
+	}
+	return msg->parsed_uri.host;
+}
+
 
 /**
  * Finds if the message contains the orig parameter in the first Route header
@@ -1644,7 +1661,7 @@ str *cscf_get_service_route(struct sip_msg *msg, int *size, int is_shm)
 			}
 			x = pkg_reallocxf(x, (*size + k) * sizeof(str));
 			if(!x) {
-				LM_ERR("Error our of pkg memory");
+				LM_ERR("Error out of pkg memory");
 				return 0;
 			}
 			r2 = r;

@@ -45,9 +45,6 @@
 #include "../../core/counters.h"
 #include "../../core/tcp_info.h"
 
-#define KSR_RTHREAD_SKIP_P
-#define KSR_RTHREAD_NEED_4PP
-#include "../../core/rthreads.h"
 #include "tls_init.h"
 #include "tls_server.h"
 #include "tls_domain.h"
@@ -316,7 +313,7 @@ static param_export_t params[] = {
 	{"renegotiation", PARAM_INT, &sr_tls_renegotiation},
 	{"xavp_cfg", PARAM_STR, &sr_tls_xavp_cfg},
 	{"event_callback", PARAM_STR, &sr_tls_event_callback},
-	{"rand_engine", PARAM_STR | USE_FUNC_PARAM,
+	{"rand_engine", PARAM_STR | PARAM_USE_FUNC,
 			(void *)ksr_rand_engine_param},
 	{"init_mode", PARAM_INT, &ksr_tls_init_mode},
 	{"key_password_mode", PARAM_INT, &ksr_tls_key_password_mode},
@@ -374,7 +371,7 @@ static tls_domains_cfg_t* tls_use_modparams(void)
 }
 #endif
 
-/* global config tls_threads_mode = 2
+/* global config tls_threads_mode = 2 (KSR_TLS_THREADS_MFORK)
  *  - force all thread-locals to be 0x0 after fork()
  *  - with OpenSSL loaded the largest value observed
  *     is < 10
@@ -404,6 +401,20 @@ static int mod_init(void)
 		return -1;
 	}
 #endif
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+	for(k = 0; k < 32; k++) {
+		if(pthread_getspecific(k) != 0) {
+			LM_WARN("detected initialized thread-locals created before tls.so; "
+					"tls.so must be the first module loaded\n");
+		}
+	}
+
+	if(ksr_tls_threads_mode == KSR_TLS_THREADS_MTEMP) {
+		LM_WARN("tls_threads_mode=1 is invalid on kamailio version >= 6; "
+				"forcing tls_threads_mode=2\n");
+		ksr_tls_threads_mode = KSR_TLS_THREADS_MFORK;
+	}
+#endif /*  OPENSSL_VERSION_NUMBER*/
 
 	if(tls_disable) {
 		LM_WARN("tls support is disabled "
@@ -490,12 +501,28 @@ static int mod_init(void)
 	if(tls_check_sockets(*tls_domains_cfg) < 0)
 		goto error;
 
-	LM_INFO("use OpenSSL version: %08x\n", (uint32_t)(OPENSSL_VERSION_NUMBER));
-#ifndef OPENSSL_NO_ECDH
-	LM_INFO("With ECDH-Support!\n");
+
+#if OPENSSL_VERSION_NUMBER < 0x030000000L
+	LM_INFO("compiled with OpenSSL version: %08x\n",
+			(uint32_t)(OPENSSL_VERSION_NUMBER));
+#elif OPENSSL_VERSION_NUMBER >= 0x030000000L
+	LM_INFO("compiled with OpenSSL version: %08x\n",
+			(uint32_t)(OPENSSL_VERSION_NUMBER));
+	LM_INFO("compile-time OpenSSL library: %s\n", OPENSSL_VERSION_TEXT);
+	LM_INFO("run-time OpenSSL library: %s\n", OpenSSL_version(OPENSSL_VERSION));
+
+	if(EVP_default_properties_is_fips_enabled(NULL) == 1) {
+		LM_INFO("FIPS mode enabled in OpenSSL library\n");
+	} else {
+		LM_DBG("FIPS mode not enabled in OpenSSL library\n");
+	}
 #endif
+
 #ifndef OPENSSL_NO_DH
-	LM_INFO("With Diffie Hellman\n");
+	LM_INFO("OpenSSL supports Diffie-Hellman\n");
+#endif
+#ifndef OPENSSL_NO_ECDH
+	LM_INFO("OpenSSL supports Elliptic-curve Diffie-Hellman\n");
 #endif
 	if(sr_tls_event_callback.s == NULL || sr_tls_event_callback.len <= 0) {
 		tls_lookup_event_routes();
@@ -509,7 +536,7 @@ static int mod_init(void)
 		ksr_module_set_flag(KSRMOD_FLAG_POSTCHILDINIT);
 	}
 #endif
-	if(ksr_tls_threads_mode == 2) {
+	if(ksr_tls_threads_mode == KSR_TLS_THREADS_MFORK) {
 		pthread_atfork(NULL, NULL, &fork_child);
 	}
 
@@ -519,7 +546,7 @@ static int mod_init(void)
 	 * that use pthread_key_create(), e.g. python,
 	 * will have larger key values
 	 */
-	if(ksr_tls_threads_mode > 0) {
+	if(ksr_tls_threads_mode > KSR_TLS_THREADS_MNONE) {
 		ERR_clear_error();
 		RAND_bytes(rand_buf, sizeof(rand_buf));
 		for(k = 0; k < 32; k++) {
@@ -575,24 +602,11 @@ static OSSL_LIB_CTX *new_ctx;
 #endif
 static int mod_child(int rank)
 {
-	int k;
-
 	if(tls_disable || (tls_domains_cfg == 0))
 		return 0;
 
-	/*
-	 * OpenSSL 3.x/1.1.1: create shared SSL_CTX* in thread executor
-	 * to avoid init of libssl in thread#1: ksr_tls_threads_mode = 1
-	 */
 	if(rank == PROC_INIT) {
-		return run_thread4PP((_thread_proto4PP)mod_child_hook, &rank, NULL);
-	}
-
-	if(ksr_tls_threads_mode == 1 && rank && rank != PROC_INIT
-			&& rank != PROC_POSTCHILDINIT) {
-		for(k = 0; k < tls_pthreads_key_mark; k++)
-			pthread_setspecific(k, 0x0);
-		LM_WARN("clean-up of thread-locals key < %d\n", tls_pthreads_key_mark);
+		return mod_child_hook(&rank, NULL);
 	}
 
 #ifdef KSR_SSL_COMMON
@@ -818,7 +832,7 @@ int mod_register(char *path, int *dlflags, void *p1, void *p2)
          */
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L \
 		&& OPENSSL_VERSION_NUMBER < 0x030000000L
-	if(ksr_tls_threads_mode == 0) {
+	if(ksr_tls_threads_mode == KSR_TLS_THREADS_MNONE) {
 		LM_WARN("OpenSSL 1.1.1 setting cryptorand random engine\n");
 		RAND_set_rand_method(RAND_ksr_cryptorand_method());
 	}

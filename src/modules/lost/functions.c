@@ -6,6 +6,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -382,8 +384,8 @@ int lost_held_function(struct sip_msg *_m, char *_con, char *_pidf, char *_url,
 	if(doc == NULL) {
 		LM_WARN("invalid xml document: [%.*s]\n", res.len, res.s);
 		doc = xmlReadMemory(res.s, res.len, 0, NULL,
-				XML_PARSE_NOBLANKS | XML_PARSE_NONET |
-				XML_PARSE_NOCDATA | XML_PARSE_RECOVER);
+				XML_PARSE_NOBLANKS | XML_PARSE_NONET | XML_PARSE_NOCDATA
+						| XML_PARSE_RECOVER);
 		if(doc == NULL) {
 			LM_ERR("xml document recovery failed on: [%.*s]\n", res.len, res.s);
 			goto err;
@@ -705,8 +707,8 @@ int lost_held_dereference(struct sip_msg *_m, char *_url, char *_pidf,
 	if(doc == NULL) {
 		LM_WARN("invalid xml document: [%.*s]\n", res.len, res.s);
 		doc = xmlReadMemory(res.s, res.len, 0, NULL,
-				XML_PARSE_NOBLANKS | XML_PARSE_NONET |
-				XML_PARSE_NOCDATA | XML_PARSE_RECOVER);
+				XML_PARSE_NOBLANKS | XML_PARSE_NONET | XML_PARSE_NOCDATA
+						| XML_PARSE_RECOVER);
 		if(doc == NULL) {
 			LM_ERR("xml document recovery failed on: [%.*s]\n", res.len, res.s);
 			goto err;

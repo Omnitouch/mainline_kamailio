@@ -7,6 +7,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -143,6 +145,7 @@ static void ds_run_route(
 		struct sip_msg *msg, str *uri, char *route, ds_rctx_t *rctx);
 
 void shuffle_uint100array(unsigned int *arr);
+void shuffle_char100array(char *arr);
 int ds_reinit_rweight_on_state_change(
 		int old_state, int new_state, ds_set_t *dset);
 
@@ -399,29 +402,35 @@ int ds_set_attrs(ds_dest_t *dest, str *vattrs)
 			dest->attrs.obproxy = pit->body;
 		} else if(pit->name.len == 5
 				  && strncasecmp(pit->name.s, "ocmin", 5) == 0) {
-			str2int(&pit->body, &dest->attrs.ocmin);
+			str2int(&pit->body, &dest->ocdata.ocmin);
 		} else if(pit->name.len == 5
 				  && strncasecmp(pit->name.s, "ocmax", 5) == 0) {
-			str2int(&pit->body, &dest->attrs.ocmax);
+			str2int(&pit->body, &dest->ocdata.ocmax);
 		} else if(pit->name.len == 6
 				  && strncasecmp(pit->name.s, "ocrate", 6) == 0) {
-			str2int(&pit->body, &dest->attrs.ocrate);
+			str2int(&pit->body, &dest->ocdata.ocrate);
 		}
 	}
-	if(dest->attrs.ocmax < 0 || dest->attrs.ocmax > 100) {
-		dest->attrs.ocmax = 100;
+	if(dest->ocdata.ocmax > 100) {
+		dest->ocdata.ocmax = 100;
 	}
-	if(dest->attrs.ocmin < 0 || dest->attrs.ocmin > 100) {
-		dest->attrs.ocmin = 0;
+	if(dest->ocdata.ocmax == 0) {
+		dest->ocdata.ocmax = 100;
 	}
-	if(dest->attrs.ocrate <= 0 || dest->attrs.ocrate > 100) {
-		dest->attrs.ocrate = 0;
+	if(dest->ocdata.ocmin > 100) {
+		dest->ocdata.ocmin = 0;
 	}
-	if(dest->attrs.ocrate < dest->attrs.ocmin) {
-		dest->attrs.ocrate = dest->attrs.ocmin;
+	if(dest->ocdata.ocmin > dest->ocdata.ocmax) {
+		dest->ocdata.ocmin = 0;
 	}
-	if(dest->attrs.ocrate > dest->attrs.ocmax) {
-		dest->attrs.ocrate = dest->attrs.ocmax;
+	if(dest->ocdata.ocrate > 100) {
+		dest->ocdata.ocrate = 0;
+	}
+	if(dest->ocdata.ocrate < dest->ocdata.ocmin) {
+		dest->ocdata.ocrate = dest->ocdata.ocmin;
+	}
+	if(dest->ocdata.ocrate > dest->ocdata.ocmax) {
+		dest->ocdata.ocrate = dest->ocdata.ocmax;
 	}
 
 	if(params_list)
@@ -435,13 +444,13 @@ int ds_set_attrs(ds_dest_t *dest, str *vattrs)
 void ds_oc_prepare(ds_dest_t *dp)
 {
 	int i;
-	for(i = 0; i < dp->attrs.ocrate; i++) {
-		dp->ocdist[i] = 0;
+	for(i = 0; i < dp->ocdata.ocrate; i++) {
+		dp->ocdata.ocdist[i] = '0';
 	}
-	for(i = dp->attrs.ocrate; i < 100; i++) {
-		dp->ocdist[i] = 1;
+	for(i = dp->ocdata.ocrate; i < 100; i++) {
+		dp->ocdata.ocdist[i] = '1';
 	}
-	shuffle_uint100array(dp->ocdist);
+	shuffle_char100array(dp->ocdata.ocdist);
 }
 
 /**
@@ -476,23 +485,24 @@ int ds_oc_set_attrs(
 	tdiff.tv_sec = (((itval > 0) ? itval : 500) * 1000) / 1000000;
 	tdiff.tv_usec = (((itval > 0) ? itval : 500) * 1000) % 1000000;
 
+	ret = -2;
 	for(i = 0; i < idx->nr; i++) {
 		if(idx->dlist[i].uri.len == duri->len
 				&& strncasecmp(idx->dlist[i].uri.s, duri->s, duri->len) == 0) {
-			if(idx->dlist[i].ocseq >= isval) {
+			if(idx->dlist[i].ocdata.ocseq >= isval) {
 				LM_DBG("skipping entry %d due to seq condition\n", i);
 				continue;
 			}
-			idx->dlist[i].attrs.ocrate = irval;
-			if(idx->dlist[i].attrs.ocrate < idx->dlist[i].attrs.ocmin) {
-				idx->dlist[i].attrs.ocrate = idx->dlist[i].attrs.ocmin;
+			idx->dlist[i].ocdata.ocrate = irval;
+			if(idx->dlist[i].ocdata.ocrate < idx->dlist[i].ocdata.ocmin) {
+				idx->dlist[i].ocdata.ocrate = idx->dlist[i].ocdata.ocmin;
 			}
-			if(idx->dlist[i].attrs.ocrate > idx->dlist[i].attrs.ocmax) {
-				idx->dlist[i].attrs.ocrate = idx->dlist[i].attrs.ocmax;
+			if(idx->dlist[i].ocdata.ocrate > idx->dlist[i].ocdata.ocmax) {
+				idx->dlist[i].ocdata.ocrate = idx->dlist[i].ocdata.ocmax;
 			}
 			ds_oc_prepare(&idx->dlist[i]);
-			timeradd(&tnow, &tdiff, &idx->dlist[i].octime);
-			idx->dlist[i].ocseq = isval;
+			timeradd(&tnow, &tdiff, &idx->dlist[i].ocdata.octime);
+			idx->dlist[i].ocdata.ocseq = isval;
 			ret = 1;
 			LM_DBG("updated entry %d\n", i);
 		}
@@ -514,19 +524,19 @@ static inline int ds_oc_skip(ds_set_t *dsg, int alg, int n)
 
 	gettimeofday(&tnow, NULL);
 
-	if(timercmp(&dsg->dlist[n].octime, &tnow, <)) {
+	if(timercmp(&dsg->dlist[n].ocdata.octime, &tnow, <)) {
 		/* over the time interval validity - use it */
 		LM_DBG("time validity not matching\n");
 		return 0;
 	}
-	if(dsg->dlist[n].ocdist[dsg->dlist[n].ocidx] == 1) {
+	if(dsg->dlist[n].ocdata.ocdist[dsg->dlist[n].ocdata.ocidx] == '1') {
 		/* use it */
 		ret = 0;
 	} else {
 		/* skip it */
 		ret = 1;
 	}
-	dsg->dlist[n].ocidx = (dsg->dlist[n].ocidx + 1) % 100;
+	dsg->dlist[n].ocdata.ocidx = (dsg->dlist[n].ocdata.ocidx + 1) % 100;
 
 	return ret;
 }
@@ -603,6 +613,7 @@ ds_dest_t *pack_dest(str iuri, int flags, int priority, str *attrs, int dload)
 	dp->flags = flags;
 	dp->priority = priority;
 	dp->dload = dload;
+	dp->ocdata.ocmax = 100;
 
 	if(ds_set_attrs(dp, attrs) < 0) {
 		LM_ERR("cannot set attributes!\n");
@@ -775,6 +786,23 @@ void shuffle_uint100array(unsigned int *arr)
 	int k;
 	int j;
 	unsigned int t;
+	if(arr == NULL)
+		return;
+	for(j = 0; j < 100; j++) {
+		k = j + (kam_rand() % (100 - j));
+		t = arr[j];
+		arr[j] = arr[k];
+		arr[k] = t;
+	}
+}
+
+
+/* for internal usage; arr must be arr[100] */
+void shuffle_char100array(char *arr)
+{
+	int k;
+	int j;
+	char t;
 	if(arr == NULL)
 		return;
 	for(j = 0; j < 100; j++) {
@@ -3920,11 +3948,15 @@ int ds_is_active_uri(sip_msg_t *msg, int group, str *uri)
 		for(j = 0; j < list->nr; j++) {
 			if(!ds_skip_dst(list->dlist[j].flags)) {
 				if(uri == NULL || uri->s == NULL || uri->len <= 0) {
+					LM_DBG("one destination active: %d %.*s\n", group,
+							list->dlist[j].uri.len, list->dlist[j].uri.s);
 					return 1;
 				}
 				if((list->dlist[j].uri.len == uri->len)
 						&& (memcmp(list->dlist[j].uri.s, uri->s, uri->len)
 								== 0)) {
+					LM_DBG("destination active: %d %.*s\n", group,
+							list->dlist[j].uri.len, list->dlist[j].uri.s);
 					return 1;
 				}
 			}
@@ -3982,14 +4014,14 @@ static void ds_options_callback(
 		}
 	}
 
-	/* Check if in the meantime someone disabled probing of the target through RPC, MI or reload */
+	/* Check if in the meantime someone disabled probing of the target
+	 * through RPC or reload */
 	if(ds_probing_mode == DS_PROBE_ONLYFLAGGED
 			&& !(ds_get_state(group, &uri) & DS_PROBING_DST)) {
 		return;
 	}
 
 	/* ps->code contains the result-code of the request.
-	 *
 	 * We accept both a "200 OK" or the configured reply as a valid response */
 	if((ps->code >= 200 && ps->code <= 299)
 			|| ds_ping_check_rplcode(ps->code)) {
@@ -4000,7 +4032,7 @@ static void ds_options_callback(
 						&& (ds_get_state(group, &uri) & DS_PROBING_DST)))
 			state |= DS_PROBING_DST;
 
-		/* Check if in the meantime someone disabled the target through RPC or MI */
+		/* Check if in the meantime someone disabled the target through RPC */
 		if(!(ds_get_state(group, &uri) & DS_DISABLED_DST)
 				&& ds_update_state(fmsg, group, &uri, state, &rctx) != 0) {
 			LM_ERR("Setting the state failed (%.*s, group %d)\n", uri.len,
@@ -4010,7 +4042,7 @@ static void ds_options_callback(
 		state = DS_TRYING_DST;
 		if(ds_probing_mode != DS_PROBE_NONE)
 			state |= DS_PROBING_DST;
-		/* Check if in the meantime someone disabled the target through RPC or MI */
+		/* Check if in the meantime someone disabled the target through RPC */
 		if(!(ds_get_state(group, &uri) & DS_DISABLED_DST)
 				&& ds_update_state(fmsg, group, &uri, state, &rctx) != 0) {
 			LM_ERR("Setting the probing state failed (%.*s, group %d)\n",
@@ -4068,6 +4100,9 @@ void ds_ping_set(ds_set_t *node)
 	for(j = 0; j < node->nr; j++) {
 		/* skip addresses set in disabled state by admin */
 		if((node->dlist[j].flags & DS_DISABLED_DST) != 0)
+			continue;
+		/* skip addresses with no-ping flag */
+		if((node->dlist[j].flags & DS_NOPING_DST) != 0)
 			continue;
 		/* If the Flag of the entry has "Probing set, send a probe:	*/
 		if(ds_ping_result_helper(node, j)) {

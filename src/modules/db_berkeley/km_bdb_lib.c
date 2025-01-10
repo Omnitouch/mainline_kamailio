@@ -6,6 +6,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -676,7 +678,7 @@ int km_bdblib_create_journal(table_p _tp)
 {
 	char *s;
 	char fn[1024];
-	char d[64];
+	char d[128];
 	FILE *fp = NULL;
 	struct tm *t;
 	int bl;

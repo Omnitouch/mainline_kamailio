@@ -64,7 +64,9 @@ Muhammad Shahzad Shafi
               4.23. via_reply_add_xavp_params(flags)
               4.24. is_faked_msg()
               4.25. is_socket_name(sockname)
-              4.26. forward_reply()
+              4.26. forward_uac()
+              4.27. forward_uac_uri(vuri)
+              4.28. forward_reply()
 
         5. RPC Commands
 
@@ -120,9 +122,11 @@ Muhammad Shahzad Shafi
    1.30. via_reply_add_xavp_params usage
    1.31. is_faked_msg usage
    1.32. is_socket_name usage
-   1.33. forward_reply usage
-   1.34. event_route[network:msg] use cases
-   1.35. Sample PERL code for do_compress and do_uncompress
+   1.33. forward_uac usage
+   1.34. forward_uac usage
+   1.35. forward_reply usage
+   1.36. event_route[network:msg] use cases
+   1.37. Sample PERL code for do_compress and do_uncompress
 
 Chapter 1. Admin Guide
 
@@ -171,7 +175,9 @@ Chapter 1. Admin Guide
         4.23. via_reply_add_xavp_params(flags)
         4.24. is_faked_msg()
         4.25. is_socket_name(sockname)
-        4.26. forward_reply()
+        4.26. forward_uac()
+        4.27. forward_uac_uri(vuri)
+        4.28. forward_reply()
 
    5. RPC Commands
 
@@ -390,7 +396,9 @@ modparam("corex", "nio_msg_avp", "$avp(msg)")
    4.23. via_reply_add_xavp_params(flags)
    4.24. is_faked_msg()
    4.25. is_socket_name(sockname)
-   4.26. forward_reply()
+   4.26. forward_uac()
+   4.27. forward_uac_uri(vuri)
+   4.28. forward_reply()
 
 4.1.  append_branch([ uri, [ q ] ])
 
@@ -503,12 +511,14 @@ event_route[network:msg] {
 4.7.  msg_iflag_set(flagname)
 
    Set internal SIP message flag. The parameter flagname can be:
-   USE_UAC_FROM, USE_UAC_TO or UAC_AUTH.
+   USE_UAC_FROM, USE_UAC_TO, UAC_AUTH or a number from 0 to 64 (the
+   meaning of each value can be found in source code).
 
    This functions should not be used in configuration file for (re)setting
    the internal flags, those are done by various functions internally,
    however, in very particular cases they might be useful (e.g., changing
-   From/To via textops functions).
+   From/To via textops functions, or during testing of C code
+   development).
 
    This function can be used from ANY_ROUTE.
 
@@ -808,13 +818,51 @@ event_route[dispatcher:dst-down] {
     }
 ...
 
-4.26.  forward_reply()
+4.26.  forward_uac()
+
+   Forward received request with a single Via header, the one added by
+   Kamailio, the other ones being removed. Useful in cases when its reply
+   should not be sent back (e.g., the reply was already sent out from
+   Kamailio).
+
+   This function can be used in REQUEST_ROUTE.
+
+   Example 1.33. forward_uac usage
+...
+request_route {
+    ...
+    sl_send_reply("200", "OK");
+    $du = "sip:mirror.com:5080";
+    forward_uac();
+    ...
+}
+...
+
+4.27.  forward_uac_uri(vuri)
+
+   Similar to forward_uac() with the posibility to provide the target
+   address as a SIP URI via the parameter vuri. The parameter vuri can
+   contain variables.
+
+   This function can be used in REQUEST_ROUTE.
+
+   Example 1.34. forward_uac usage
+...
+request_route {
+    ...
+    sl_send_reply("200", "OK");
+    forward_uac_uri("sip:mirror.com:5080");
+    ...
+}
+...
+
+4.28.  forward_reply()
 
    Forward received reply on demand.
 
    This function can be used in CORE_ONREPLY_ROUTE.
 
-   Example 1.33. forward_reply usage
+   Example 1.35. forward_reply usage
 ...
 route[reply] {
     forward_reply();
@@ -997,7 +1045,7 @@ route[reply] {
    Next is a basic usage example where encoding and decoding is done using
    PERL.
 
-   Example 1.34. event_route[network:msg] use cases
+   Example 1.36. event_route[network:msg] use cases
 ...
 loadmodule "app_perl.so"
 loadmodule "corex.so"
@@ -1028,7 +1076,7 @@ event_route[network:msg] {
 }
 ...
 
-   Example 1.35. Sample PERL code for do_compress and do_uncompress
+   Example 1.37. Sample PERL code for do_compress and do_uncompress
 ...
 use strict;
 use warnings;

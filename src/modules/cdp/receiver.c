@@ -25,6 +25,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -605,7 +607,7 @@ static inline int do_receive(serviced_peer_t *sp)
 			version = (unsigned char)(sp->buf[0]);
 			if(version != 1) {
 				LM_ERR("do_receive(): [%.*s] Received Unknown version [%d]\n",
-						sp->p->fqdn.len, sp->p->fqdn.s,
+						sp->p ? sp->p->fqdn.len : 0, sp->p ? sp->p->fqdn.s : 0,
 						(unsigned char)sp->buf[0]);
 				goto error_and_reset;
 			} else {
@@ -830,7 +832,7 @@ int receive_loop(peer *original_peer)
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
 							if(enable_tls) {
 								to_ssl(&sp2->tls_ctx, &sp2->tls_conn,
-										sp->tcp_socket, method);
+										sp2->tcp_socket, method);
 							}
 #endif
 						} else {
@@ -843,7 +845,7 @@ int receive_loop(peer *original_peer)
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
 							if(enable_tls) {
 								to_ssl(&sp2->tls_ctx, &sp2->tls_conn,
-										sp->tcp_socket, method);
+										sp2->tcp_socket, method);
 							}
 #endif
 						}

@@ -7,6 +7,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -310,10 +312,12 @@ int ki_kz_amqp_publish(
 		sip_msg_t *msg, str *exchange, str *routing_key, str *payload);
 int ki_kz_amqp_publish_hdrs(sip_msg_t *msg, str *exchange, str *routing_key,
 		str *payload, str *headers);
-int kz_amqp_query(struct sip_msg *msg, char *exchange, char *routing_key,
-		char *payload, char *dst, char *headers);
-int kz_amqp_query_ex(struct sip_msg *msg, char *exchange, char *routing_key,
-		char *payload, char *headers);
+int kz_amqp_query_3(
+		struct sip_msg *msg, char *exchange, char *routing_key, char *payload);
+int kz_amqp_query_4(struct sip_msg *msg, char *exchange, char *routing_key,
+		char *payload, str *dst);
+int kz_amqp_query_5(struct sip_msg *msg, char *exchange, char *routing_key,
+		char *payload, str *dst, char *headers);
 int kz_amqp_subscribe(struct sip_msg *msg, char *payload);
 int ki_kz_amqp_subscribe(sip_msg_t *msg, str *payload);
 int kz_amqp_subscribe_simple(struct sip_msg *msg, char *exchange,
@@ -326,6 +330,8 @@ int kz_amqp_async_query(struct sip_msg *msg, char *exchange, char *routing_key,
 int kz_amqp_async_query_ex(struct sip_msg *msg, char *_exchange,
 		char *_routing_key, char *_payload, char *_cb_route, char *_err_route,
 		char *_pub_flags);
+
+void kz_set_pseudo_var(struct sip_msg *msg, str *dst);
 
 //void kz_amqp_generic_consumer_loop(int child_no);
 void kz_amqp_manager_loop(int child_no);

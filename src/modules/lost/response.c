@@ -6,6 +6,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -54,7 +56,7 @@
 #include "utilities.h"
 #include "response.h"
 
-/* 
+/*
  * is_http_laquot(search)
  * return 1 if true else 0
  */
@@ -77,7 +79,7 @@ int is_http_laquot(char *search)
 	return 0;
 }
 
-/* 
+/*
  * is_https_laquot(search)
  * return 1 if true else 0
  */
@@ -101,7 +103,7 @@ int is_https_laquot(char *search)
 	return 0;
 }
 
-/* 
+/*
  * is_http(search)
  * return 1 if true else 0
  */
@@ -123,7 +125,7 @@ int is_http(char *search)
 	return 0;
 }
 
-/* 
+/*
  * is_https(search)
  * return 1 if true else 0
  */
@@ -146,7 +148,7 @@ int is_https(char *search)
 	return 0;
 }
 
-/* 
+/*
  * is_cid_laquot(search)
  * return 1 if true else 0
  */
@@ -168,7 +170,7 @@ int is_cid_laquot(char *search)
 	return 0;
 }
 
-/* 
+/*
  * is_cid(search)
  * return 1 if true else 0
  */
@@ -189,7 +191,7 @@ int is_cid(char *search)
 	return 0;
 }
 
-/* 
+/*
  * is_urn(search)
  * return 1 if true else 0
  */
@@ -612,7 +614,7 @@ void lost_free_findServiceResponse(p_lost_fsr_t *res)
 
 /*
  * lost_get_response_issue(node)
- * parses response issue (errors, warnings) and writes 
+ * parses response issue (errors, warnings) and writes
  * results to issue object
  */
 p_lost_issue_t lost_get_response_issues(xmlNodePtr node)
@@ -964,8 +966,8 @@ p_lost_fsr_t lost_parse_findServiceResponse(str ret)
 	if(doc == NULL) {
 		LM_ERR("invalid xml document: [%.*s]\n", ret.len, ret.s);
 		doc = xmlReadMemory(ret.s, ret.len, 0, NULL,
-				XML_PARSE_NOBLANKS | XML_PARSE_NONET |
-				XML_PARSE_NOCDATA | XML_PARSE_RECOVER);
+				XML_PARSE_NOBLANKS | XML_PARSE_NONET | XML_PARSE_NOCDATA
+						| XML_PARSE_RECOVER);
 		if(doc == NULL) {
 			LM_ERR("xml document recovery failed on: [%.*s]\n", ret.len, ret.s);
 			return NULL;

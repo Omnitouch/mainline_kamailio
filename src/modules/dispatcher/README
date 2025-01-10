@@ -122,7 +122,8 @@ Federico Cabiddu
               4.14. ds_load_unset()
               4.15. ds_reload()
               4.16. ds_dsg_fetch(setid)
-              4.17. ds_oc_set_attrs(setid, uri, rval, tval, sval)
+              4.17. ds_dsg_fetch_uri(setid, uri)
+              4.18. ds_oc_set_attrs(setid, uri, rval, tval, sval)
 
         5. RPC Commands
 
@@ -134,6 +135,7 @@ Federico Cabiddu
               5.6. dispatcher.add
               5.7. dispatcher.remove
               5.8. dispatcher.hash
+              5.9. dispatcher.oclist
 
         6. Installation and Running
 
@@ -212,9 +214,10 @@ Federico Cabiddu
    1.57. ds_load_unset usage
    1.58. ds_reload usage
    1.59. ds_dsg_fetch() usage
-   1.60. ds_oc_set_attrs() usage
-   1.61. dispatcher list file
-   1.62. Kamailio config script - sample dispatcher usage
+   1.60. ds_dsg_fetch_uri() usage
+   1.61. ds_oc_set_attrs() usage
+   1.62. dispatcher list file
+   1.63. Kamailio config script - sample dispatcher usage
 
 Chapter 1. Admin Guide
 
@@ -291,7 +294,8 @@ Chapter 1. Admin Guide
         4.14. ds_load_unset()
         4.15. ds_reload()
         4.16. ds_dsg_fetch(setid)
-        4.17. ds_oc_set_attrs(setid, uri, rval, tval, sval)
+        4.17. ds_dsg_fetch_uri(setid, uri)
+        4.18. ds_oc_set_attrs(setid, uri, rval, tval, sval)
 
    5. RPC Commands
 
@@ -303,6 +307,7 @@ Chapter 1. Admin Guide
         5.6. dispatcher.add
         5.7. dispatcher.remove
         5.8. dispatcher.hash
+        5.9. dispatcher.oclist
 
    6. Installation and Running
 
@@ -1118,7 +1123,8 @@ modparam("dispatcher", "ds_interval_mode", 7200)
    4.14. ds_load_unset()
    4.15. ds_reload()
    4.16. ds_dsg_fetch(setid)
-   4.17. ds_oc_set_attrs(setid, uri, rval, tval, sval)
+   4.17. ds_dsg_fetch_uri(setid, uri)
+   4.18. ds_oc_set_attrs(setid, uri, rval, tval, sval)
 
 4.1.  ds_select_dst(set, alg[, limit])
 
@@ -1636,7 +1642,24 @@ onreply_route {
     xinfo("set id: 1 - all: $dsg(count); active: $dsg(active)\n");
 ...
 
-4.17.  ds_oc_set_attrs(setid, uri, rval, tval, sval)
+4.17.  ds_dsg_fetch_uri(setid, uri)
+
+   Sets the destination group id to setid for fetching $dsg(key)
+   attributes and the overload-control attributes to the corresponding uri
+   record from that group.
+
+   Parameters: setid - integer or variable holding the set id value; uri -
+   string or variables holding the SIP URI value.
+
+   This function can be used from ANY_ROUTE.
+
+   Example 1.60. ds_dsg_fetch_uri() usage
+...
+    ds_dsg_fetch_uri("1", "sip:127.0.0.1:5080");
+    xinfo("set id: 1 - all: $dsg(count); active: $dsg(active); $dsg(ocrate)\n");
+...
+
+4.18.  ds_oc_set_attrs(setid, uri, rval, tval, sval)
 
    Sets the overload control rate, time internval limit and sequence
    number for the destination record (setid, uri) following RFC7339
@@ -1655,9 +1678,14 @@ onreply_route {
 
    The parameters can include variables.
 
+   The returns 1 (cfg-true) when the oc attrbutes are udpated for a
+   destination record; -1 (cfg-false) when there is an internal error; -2
+   (cfg-false) when no destination is updated (e.g., not found or the
+   ocseq condition fails).
+
    This function can be used from ANY_ROUTE.
 
-   Example 1.60. ds_oc_set_attrs() usage
+   Example 1.61. ds_oc_set_attrs() usage
 ...
     ds_oc_set_attrs("1", "sip:127.0.0.1:5080", "30", "180000", "1");
 ...
@@ -1672,6 +1700,7 @@ onreply_route {
    5.6. dispatcher.add
    5.7. dispatcher.remove
    5.8. dispatcher.hash
+   5.9. dispatcher.oclist
 
 5.1.  dispatcher.set_state
 
@@ -1852,6 +1881,22 @@ kamctl rpc dispatcher.hash 0 alice server.com
 kamctl rpc dispatcher.hash 4 bob server.com
 ...
 
+5.9.  dispatcher.oclist
+
+   List the overload control attributes for the records in a specific
+   group.
+
+   Name: dispatcher.oclist
+
+   Parameters:
+     * _group_: destination group id
+
+   Example:
+...
+# prototype: kamcli dispatcher.oclist _group_
+kamcli dispatcher.oclist 1
+...
+
 6. Installation and Running
 
    6.1. Destination List File
@@ -1883,6 +1928,7 @@ kamctl rpc dispatcher.hash 4 bob server.com
             startup, useful when the hostname of the destination address
             is a NAPTR or SRV record only. Such addresses cannot be
             matched anymore with ds_is_from_list(...).
+          + 32 (bit at index 5 - 1 <<5) - no ping to destination
      * priority: sets the priority in destination list (based on it is
        done the initial ordering inside the set)
      * attributes: extra fields in form of name1=value1;...;nameN=valueN.
@@ -1944,7 +1990,7 @@ setid(int) destination(sip uri) flags(int,opt) priority(int,opt) attrs(str,opt)
    For database, each element of a line resides in a different column.
    Next is a dispatcher.list file example:
 
-   Example 1.61. dispatcher list file
+   Example 1.62. dispatcher list file
 ...
 #
 # dispatcher destination sets (groups)
@@ -1969,7 +2015,7 @@ r,opt)
 
    Next listing shows a sample config for using the dispatcher module.
 
-   Example 1.62. Kamailio config script - sample dispatcher usage
+   Example 1.63. Kamailio config script - sample dispatcher usage
 ...
 #!KAMAILIO
 #

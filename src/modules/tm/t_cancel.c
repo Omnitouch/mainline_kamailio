@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -29,12 +31,15 @@
 #include "t_funcs.h"
 #include "../../core/dprint.h"
 #include "../../core/ut.h"
+#include "../../core/kemi.h"
 #include "t_reply.h"
 #include "t_cancel.h"
 #include "t_msgbuilder.h"
 #include "t_lookup.h" /* for t_lookup_callid in fifo_uac_cancel */
 #include "t_hooks.h"
 
+
+extern str tm_event_callback;
 
 typedef struct cancel_reason_map
 {
@@ -120,7 +125,7 @@ int cancel_uacs(struct cell *t, struct cancel_info *cancel_data, int flags)
 	/* cancel pending client transactions, if any */
 	for(i = 0; i < t->nr_of_outgoings; i++)
 		if(cancel_data->cancel_bitmap & (1 << i)) {
-			r = cancel_branch(t, i, &cancel_data->reason,
+			r = cancel_branch(t, i, NULL, &cancel_data->reason,
 					flags
 							| ((t->uac[i].request.buffer == NULL)
 											? F_CANCEL_B_FAKE_REPLY
@@ -169,6 +174,7 @@ int cancel_all_uacs(struct cell *trans, int how)
  *
  * params:  t - transaction
  *          branch - branch number to be canceled
+ *          cancel_msg - incoming cancel message
  *          reason - cancel reason structure
  *          flags - howto cancel:
  *                   F_CANCEL_B_KILL - will completely stop the
@@ -200,8 +206,8 @@ int cancel_all_uacs(struct cell *trans, int how)
  *          - checking for buffer==0 under REPLY_LOCK is no enough, an
  *           atomic_cmpxhcg or atomic_get_and_set _must_ be used.
  */
-int cancel_branch(
-		struct cell *t, int branch, struct cancel_reason *reason, int flags)
+int cancel_branch(struct cell *t, int branch, sip_msg_t *cancel_msg,
+		struct cancel_reason *reason, int flags)
 {
 	char *cancel;
 	unsigned int len;
@@ -210,6 +216,11 @@ int cancel_branch(
 	struct cancel_info tmp_cd;
 	void *pcbuf;
 	int reply_status;
+	int rt, backup_rt;
+	struct run_act_ctx ctx;
+	sip_msg_t msg;
+	sr_kemi_eng_t *keng = NULL;
+	str evname = str_init("tm:local-request");
 
 	crb = &t->uac[branch].local_cancel;
 	irb = &t->uac[branch].request;
@@ -285,11 +296,11 @@ int cancel_branch(
 				(t->uas.request && t->uas.request->msg_flags & FL_USE_UAC_TO)
 						? 0
 						: &t->to_hdr,
-				reason);
+				cancel_msg, reason);
 	} else {
 		/* build the CANCEL from the received INVITE */
-		cancel = build_local(
-				t, branch, &len, CANCEL, CANCEL_LEN, &t->to_hdr, reason);
+		cancel = build_local(t, branch, &len, CANCEL, CANCEL_LEN, &t->to_hdr,
+				cancel_msg, reason);
 	}
 	if(!cancel || len <= 0) {
 		LM_ERR("attempt to build a CANCEL failed\n");
@@ -326,6 +337,46 @@ int cancel_branch(
 	crb->buffer_len = len;
 
 	LM_DBG("sending cancel...\n");
+
+	rt = -1;
+	if(tm_event_callback.s == NULL || tm_event_callback.len <= 0) {
+		rt = route_lookup(&event_rt, evname.s);
+		if(rt < 0 || event_rt.rlist[rt] == NULL) {
+			LM_DBG("tm:local-request not found\n");
+		}
+	} else {
+		keng = sr_kemi_eng_get();
+		if(keng == NULL) {
+			LM_DBG("event callback (%s) set, but no cfg engine\n",
+					tm_event_callback.s);
+		}
+	}
+
+	// /* Check if msg is null */
+	if(build_sip_msg_from_buf(&msg, crb->buffer, crb->buffer_len, 0) < 0) {
+		LM_ERR("fail to parse msg\n");
+	}
+
+	/* Call event */
+	backup_rt = get_route_type();
+	set_route_type(REQUEST_ROUTE);
+	init_run_actions_ctx(&ctx);
+	if(rt >= 0) {
+		LM_DBG("tm:local-request found [%d]\n", rt);
+		run_top_route(event_rt.rlist[rt], &msg, 0);
+	} else {
+		if(keng != NULL) {
+
+			if(sr_kemi_route(
+					   keng, &msg, EVENT_ROUTE, &tm_event_callback, &evname)
+					< 0) {
+				LM_ERR("error running event route kemi callback\n");
+			}
+		}
+	}
+	set_route_type(backup_rt);
+	free_sip_msg(&msg);
+
 	if(SEND_BUFFER(crb) >= 0) {
 		if(unlikely(has_tran_tmcbs(t, TMCB_REQUEST_OUT)))
 			run_trans_callbacks_with_buf(
@@ -354,9 +405,10 @@ void rpc_cancel(rpc_t *rpc, void *c)
 	static char cseq[128], callid[128];
 	struct cancel_info cancel_data;
 	int i, j;
-
 	str cseq_s;	  /* cseq */
 	str callid_s; /* callid */
+	tm_cell_t *orig_t = NULL;
+	int orig_branch;
 
 	cseq_s.s = cseq;
 	callid_s.s = callid;
@@ -367,6 +419,7 @@ void rpc_cancel(rpc_t *rpc, void *c)
 		return;
 	}
 
+	tm_get_tb(&orig_t, &orig_branch);
 	if(t_lookup_callid(&trans, callid_s, cseq_s) < 0) {
 		LM_DBG("Lookup failed\n");
 		rpc->fault(c, 400, "Transaction not found");
@@ -381,6 +434,7 @@ void rpc_cancel(rpc_t *rpc, void *c)
 
 	/* t_lookup_callid REF`d the transaction for us, we must UNREF here! */
 	UNREF(trans);
+	tm_set_tb(orig_t, orig_branch);
 	j = 0;
 	while(i) {
 		j++;

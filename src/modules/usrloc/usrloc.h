@@ -3,6 +3,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -63,6 +65,7 @@ typedef enum flags
 	FL_MEM = 1 << 0,		 /*!< Update memory only */
 	FL_DMQRPL = 1 << 1,		 /*!< DMQ replication */
 	FL_EXPCLB = 1 << 2,		 /*!< Expired callback executed */
+	FL_KASENT = 1 << 3,		 /*!< Keepalive sent to contact */
 	FL_ALL = (int)0xFFFFFFFF /*!< All flags set */
 } flags_t;
 

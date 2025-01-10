@@ -4,6 +4,8 @@
  *
  * This file is part of Kamailio, a free SIP server.
  *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ *
  * Kamailio is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -89,6 +91,7 @@
 #include "rtpengine_hash.h"
 #include "bencode.h"
 #include "config.h"
+#include "api.h"
 
 MODULE_VERSION
 
@@ -150,6 +153,9 @@ static const char *command_strings[] = {
 	[OP_PLAY_MEDIA] = "play media",
 	[OP_STOP_MEDIA] = "stop media",
 	[OP_PLAY_DTMF] = "play DTMF",
+	[OP_SUBSCRIBE_REQUEST]= "subscribe request",
+	[OP_SUBSCRIBE_ANSWER] = "subscribe answer",
+	[OP_UNSUBSCRIBE]    = "unsubscribe",
 };
 
 static const char *sip_type_strings[] = {
@@ -226,6 +232,7 @@ static int rtpengine_delete1_f(struct sip_msg *, char *, char *);
 static int rtpengine_manage1_f(struct sip_msg *, char *, char *);
 static int rtpengine_query1_f(struct sip_msg *, char *, char *);
 static int rtpengine_info1_f(struct sip_msg *, char *, char *);
+static void rtpengine_ping_check_timer(unsigned int ticks, void *);
 
 static int w_rtpengine_query_v(sip_msg_t *msg, char *pfmt, char *pvar);
 static int fixup_rtpengine_query_v(void **param, int param_no);
@@ -241,9 +248,22 @@ static int parse_viabranch(struct ng_flags_parse *ng_flags, struct sip_msg *msg,
 static int parse_from_to_tags(struct ng_flags_parse *ng_flags,
 		enum rtpe_operation op, struct sip_msg *msg);
 
+static int bind_rtpengine(rtpengine_api_t *api);
+
 static int rtpengine_offer_answer(
 		struct sip_msg *msg, void *d, enum rtpe_operation op, int more);
+static int ki_rtpengine_subscribe_request(struct rtpengine_session *sess,
+		str **to_tag, str *flags, unsigned int subscribe_flags, str *ret_body,
+		struct rtpengine_streams *ret_streams);
+static int ki_rtpengine_subscribe_answer(
+		struct rtpengine_session *sess, str *to_tag, str *flags, str *body);
+static int ki_rtpengine_unsubscribe(
+		struct rtpengine_session *sess, str *to_tag, str *flags);
+static bencode_item_t *rtpengine_subscribe_wrap(struct rtpengine_session *sess,
+		enum rtpe_operation op, str *to_tag, str *flags,
+		unsigned int subscribe_flags, str *body);
 static int fixup_set_id(void **param, int param_no);
+static int fixup_free_set_id(void **param, int param_no);
 static int set_rtpengine_set_f(struct sip_msg *msg, char *str1, char *str2);
 static struct rtpp_set *select_rtpp_set(unsigned int id_set);
 static struct rtpp_node *select_rtpp_node_new(
@@ -317,8 +337,8 @@ static gen_lock_t *rtpp_no_lock = 0;
 static int *rtpp_socks = 0;
 static unsigned int rtpp_socks_size = 0;
 
-static int setid_avp_type;
-static int_str setid_avp;
+static avp_flags_t setid_avp_type;
+static avp_name_t setid_avp;
 
 static str write_sdp_pvar_str = {NULL, 0};
 static pv_spec_t *write_sdp_pvar = NULL;
@@ -361,6 +381,7 @@ static str rtpengine_dtmf_event_sock;
 static int rtpengine_dtmf_event_fd;
 int dtmf_event_rt = -1; /* default disabled */
 static int rtpengine_ping_mode = 1;
+static int rtpengine_ping_interval = 60;
 
 /* clang-format off */
 typedef struct rtpp_set_link {
@@ -384,90 +405,81 @@ struct crypto_binds rtpengine_cb;
 /* clang-format off */
 static cmd_export_t cmds[] = {
 	{"set_rtpengine_set", (cmd_function)set_rtpengine_set_f, 1,
-			fixup_set_id, 0, ANY_ROUTE},
+		fixup_set_id, fixup_free_set_id, ANY_ROUTE},
 	{"set_rtpengine_set", (cmd_function)set_rtpengine_set_f, 2,
-			fixup_set_id, 0, ANY_ROUTE},
-	{"start_recording", (cmd_function)start_recording_f, 0, 0, 0,
-			ANY_ROUTE},
-	{"start_recording", (cmd_function)start_recording_f, 1, fixup_spve_null,
-			0, ANY_ROUTE},
+		fixup_set_id, fixup_free_set_id, ANY_ROUTE},
+	{"start_recording", (cmd_function)start_recording_f, 0, 0, 0, ANY_ROUTE},
+	{"start_recording", (cmd_function)start_recording_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"stop_recording", (cmd_function)stop_recording_f, 0, 0, 0, ANY_ROUTE},
-	{"stop_recording", (cmd_function)stop_recording_f, 1, fixup_spve_null,
-			0, ANY_ROUTE},
+	{"stop_recording", (cmd_function)stop_recording_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"block_dtmf", (cmd_function)block_dtmf_f, 0, 0, 0, ANY_ROUTE},
 	{"unblock_dtmf", (cmd_function)unblock_dtmf_f, 0, 0, 0, ANY_ROUTE},
 	{"block_media", (cmd_function)block_media_f, 0, 0, 0, ANY_ROUTE},
 	{"unblock_media", (cmd_function)unblock_media_f, 0, 0, 0, ANY_ROUTE},
 	{"silence_media", (cmd_function)silence_media_f, 0, 0, 0, ANY_ROUTE},
-	{"unsilence_media", (cmd_function)unsilence_media_f, 0, 0, 0,
-			ANY_ROUTE},
-	{"block_dtmf", (cmd_function)block_dtmf_f, 1, fixup_spve_null, 0,
-			ANY_ROUTE},
-	{"unblock_dtmf", (cmd_function)unblock_dtmf_f, 1, fixup_spve_null, 0,
-			ANY_ROUTE},
-	{"block_media", (cmd_function)block_media_f, 1, fixup_spve_null, 0,
-			ANY_ROUTE},
-	{"unblock_media", (cmd_function)unblock_media_f, 1, fixup_spve_null, 0,
-			ANY_ROUTE},
-	{"silence_media", (cmd_function)silence_media_f, 1, fixup_spve_null, 0,
-			ANY_ROUTE},
-	{"unsilence_media", (cmd_function)unsilence_media_f, 1, fixup_spve_null,
-			0, ANY_ROUTE},
-	{"start_forwarding", (cmd_function)start_forwarding_f, 0, 0, 0,
-			ANY_ROUTE},
-	{"stop_forwarding", (cmd_function)stop_forwarding_f, 0, 0, 0,
-			ANY_ROUTE},
+	{"unsilence_media", (cmd_function)unsilence_media_f, 0, 0, 0, ANY_ROUTE},
+	{"block_dtmf", (cmd_function)block_dtmf_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"unblock_dtmf", (cmd_function)unblock_dtmf_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"block_media", (cmd_function)block_media_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"unblock_media", (cmd_function)unblock_media_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"silence_media", (cmd_function)silence_media_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"unsilence_media", (cmd_function)unsilence_media_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"start_forwarding", (cmd_function)start_forwarding_f, 0, 0, 0, ANY_ROUTE},
+	{"stop_forwarding", (cmd_function)stop_forwarding_f, 0, 0, 0, ANY_ROUTE},
 	{"start_forwarding", (cmd_function)start_forwarding_f, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
-	{"stop_forwarding", (cmd_function)stop_forwarding_f, 1, fixup_spve_null,
-			0, ANY_ROUTE},
-	{"play_media", (cmd_function)play_media_f, 1, fixup_spve_null, 0,
-			ANY_ROUTE},
-	{"play_media", (cmd_function)play_media_f, 2, fixup_spve_spve, 0,
-			ANY_ROUTE},
-	{"stop_media", (cmd_function)stop_media_f, 1, fixup_spve_null, 0,
-			ANY_ROUTE},
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"stop_forwarding", (cmd_function)stop_forwarding_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"play_media", (cmd_function)play_media_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"play_media", (cmd_function)play_media_f, 2,
+		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
+	{"stop_media", (cmd_function)stop_media_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"stop_media", (cmd_function)stop_media_f, 0, 0, 0, ANY_ROUTE},
-	{"play_dtmf", (cmd_function)play_dtmf_f, 1, fixup_spve_null, 0,
-			ANY_ROUTE},
-	{"rtpengine_offer", (cmd_function)rtpengine_offer1_f, 0, 0, 0,
-			ANY_ROUTE},
+	{"play_dtmf", (cmd_function)play_dtmf_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"rtpengine_offer", (cmd_function)rtpengine_offer1_f, 0, 0, 0, ANY_ROUTE},
 	{"rtpengine_offer", (cmd_function)rtpengine_offer1_f, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"rtpengine_offer", (cmd_function)rtpengine_offer1_f, 2,
-			fixup_spve_spve, 0, ANY_ROUTE},
-	{"rtpengine_answer", (cmd_function)rtpengine_answer1_f, 0, 0, 0,
-			ANY_ROUTE},
+		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
+	{"rtpengine_answer", (cmd_function)rtpengine_answer1_f, 0, 0, 0, ANY_ROUTE},
 	{"rtpengine_answer", (cmd_function)rtpengine_answer1_f, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"rtpengine_answer", (cmd_function)rtpengine_answer1_f, 2,
-			fixup_spve_spve, 0, ANY_ROUTE},
+		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"rtpengine_info", (cmd_function)rtpengine_info1_f, 0, 0, 0, ANY_ROUTE},
-	{"rtpengine_info", (cmd_function)rtpengine_info1_f, 1, fixup_spve_null,
-			0, ANY_ROUTE},
-	{"rtpengine_info", (cmd_function)rtpengine_info1_f, 2, fixup_spve_spve,
-			0, ANY_ROUTE},
-	{"rtpengine_manage", (cmd_function)rtpengine_manage1_f, 0, 0, 0,
-			ANY_ROUTE},
+	{"rtpengine_info", (cmd_function)rtpengine_info1_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"rtpengine_info", (cmd_function)rtpengine_info1_f, 2,
+		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
+	{"rtpengine_manage", (cmd_function)rtpengine_manage1_f, 0, 0, 0, ANY_ROUTE},
 	{"rtpengine_manage", (cmd_function)rtpengine_manage1_f, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"rtpengine_manage", (cmd_function)rtpengine_manage1_f, 2,
-			fixup_spve_spve, 0, ANY_ROUTE},
-	{"rtpengine_delete", (cmd_function)rtpengine_delete1_f, 0, 0, 0,
-			ANY_ROUTE},
+		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
+	{"rtpengine_delete", (cmd_function)rtpengine_delete1_f, 0, 0, 0, ANY_ROUTE},
 	{"rtpengine_delete", (cmd_function)rtpengine_delete1_f, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"rtpengine_delete", (cmd_function)rtpengine_delete1_f, 2,
-			fixup_spve_spve, 0, ANY_ROUTE},
-	{"rtpengine_query", (cmd_function)rtpengine_query1_f, 0, 0, 0,
-			ANY_ROUTE},
+		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
+	{"rtpengine_query", (cmd_function)rtpengine_query1_f, 0, 0, 0, ANY_ROUTE},
 	{"rtpengine_query", (cmd_function)rtpengine_query1_f, 1,
-			fixup_spve_null, 0, ANY_ROUTE},
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"rtpengine_query", (cmd_function)rtpengine_query1_f, 2,
-			fixup_spve_spve, 0, ANY_ROUTE},
+		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"rtpengine_query_v", (cmd_function)w_rtpengine_query_v, 2,
-			fixup_rtpengine_query_v, fixup_free_rtpengine_query_v,
-			ANY_ROUTE},
+		fixup_rtpengine_query_v, fixup_free_rtpengine_query_v, ANY_ROUTE},
+	{"bind_rtpengine", (cmd_function)bind_rtpengine, 0, 0, 0, 0},
 	{0, 0, 0, 0, 0, 0}
 };
 
@@ -480,20 +492,21 @@ static pv_export_t mod_pvs[] = {
 };
 
 static param_export_t params[] = {
-	{"rtpengine_sock", PARAM_STRING | USE_FUNC_PARAM,
+	{"rtpengine_sock", PARAM_STRING | PARAM_USE_FUNC,
 			(void *)rtpengine_set_store},
-	{"rtpengine_disable_tout", INT_PARAM,
+	{"rtpengine_disable_tout", PARAM_INT,
 			&default_rtpengine_cfg.rtpengine_disable_tout},
-	{"aggressive_redetection", INT_PARAM,
+	{"aggressive_redetection", PARAM_INT,
 			&default_rtpengine_cfg.aggressive_redetection},
-	{"rtpengine_retr", INT_PARAM, &default_rtpengine_cfg.rtpengine_retr},
-	{"queried_nodes_limit", INT_PARAM,
+	{"rtpengine_retr", PARAM_INT, &default_rtpengine_cfg.rtpengine_retr},
+	{"queried_nodes_limit", PARAM_INT,
 			&default_rtpengine_cfg.queried_nodes_limit},
-	{"rtpengine_tout_ms", INT_PARAM,
+	{"rtpengine_tout_ms", PARAM_INT,
 			&default_rtpengine_cfg.rtpengine_tout_ms},
-	{"rtpengine_allow_op", INT_PARAM, &rtpengine_allow_op},
-	{"control_cmd_tos", INT_PARAM, &control_cmd_tos},
+	{"rtpengine_allow_op", PARAM_INT, &rtpengine_allow_op},
+	{"control_cmd_tos", PARAM_INT, &control_cmd_tos},
 	{"ping_mode", PARAM_INT, &rtpengine_ping_mode},
+	{"ping_interval", PARAM_INT, &rtpengine_ping_interval},
 	{"db_url", PARAM_STR, &rtpp_db_url},
 	{"table_name", PARAM_STR, &rtpp_table_name},
 	{"setid_col", PARAM_STR, &rtpp_setid_col},
@@ -507,12 +520,12 @@ static param_export_t params[] = {
 	{"write_sdp_pv", PARAM_STR, &write_sdp_pvar_str},
 	{"write_sdp_pv_mode", PARAM_INT, &write_sdp_pvar_mode},
 	{"read_sdp_pv", PARAM_STR, &read_sdp_pvar_str},
-	{"hash_table_tout", INT_PARAM, &hash_table_tout},
-	{"hash_table_size", INT_PARAM, &hash_table_size},
-	{"setid_default", INT_PARAM, &setid_default},
+	{"hash_table_tout", PARAM_INT, &hash_table_tout},
+	{"hash_table_size", PARAM_INT, &hash_table_size},
+	{"setid_default", PARAM_INT, &setid_default},
 	{"media_duration", PARAM_STR, &media_duration_pvar_str},
-	{"hash_algo", INT_PARAM, &hash_algo},
-	{"dtmf_events_sock", STR_PARAM | USE_FUNC_PARAM,
+	{"hash_algo", PARAM_INT, &hash_algo},
+	{"dtmf_events_sock", PARAM_STRING | PARAM_USE_FUNC,
 			(void *)rtpengine_set_dtmf_events_sock},
 	{"dtmf_event_callid", PARAM_STR, &dtmf_event_callid_pvar_str},
 	{"dtmf_event_source_tag", PARAM_STR, &dtmf_event_source_tag_pvar_str},
@@ -664,6 +677,16 @@ int rtpengine_delete_node(struct rtpp_node *rtpp_node)
 }
 
 
+/**
+ * @brief Deletes all nodes in a given RTP engine set.
+ *
+ * @details Iterates over all nodes in the specified RTP engine set,
+ * calling rtpengine_delete_node on each node to remove it. It ensures thread
+ * safety by acquiring and releasing the set's lock.
+ *
+ * @param rtpp_list The RTP engine set from which to delete nodes.
+ * @return 1 on success.
+ */
 int rtpengine_delete_node_set(struct rtpp_set *rtpp_list)
 {
 	struct rtpp_node *rtpp_node;
@@ -679,6 +702,16 @@ int rtpengine_delete_node_set(struct rtpp_set *rtpp_list)
 }
 
 
+/**
+ * @brief Deletes all nodes across all RTP engine sets.
+ *
+ * @details Iterates over all RTP engine sets, acquiring and releasing the
+ * set's lock for each set. It then calls rtpengine_delete_node_set to delete all
+ * nodes within each set. This ensures thread safety and complete removal of all
+ * nodes.
+ *
+ * @return 1 on success.
+ */
 int rtpengine_delete_node_all()
 {
 	struct rtpp_set *rtpp_list;
@@ -698,6 +731,17 @@ int rtpengine_delete_node_all()
 }
 
 
+/**
+ * @brief Determines the type of IP address from a given string.
+ *
+ * @details Attempts to resolve the given string as an IP address and
+ * determines its type (IPv4 or IPv6). It uses getaddrinfo to perform the
+ * resolution and checks the family of the returned address information.
+ *
+ * @param str_addr The string representation of the IP address to check.
+ * @return The family of the IP address (AF_INET for IPv4, AF_INET6 for IPv6),
+ *         or -1 if the address is invalid or of an unknown format.
+ */
 static int get_ip_type(char *str_addr)
 {
 	struct addrinfo hint, *info = NULL;
@@ -732,6 +776,17 @@ static int get_ip_type(char *str_addr)
 }
 
 
+/**
+ * @brief Determines the scope of a given IPv6 address.
+ *
+ * @details Iterates through all network interfaces to find the scope of a given IPv6 address.
+ * It uses getifaddrs to get a list of all network interfaces and their addresses, then iterates
+ * through the list to find the interface that matches the given address. It uses getnameinfo to
+ * convert the binary address to a string representation for comparison.
+ *
+ * @param str_addr The string representation of the IPv6 address to find the scope for.
+ * @return The scope ID of the IPv6 address if found, -1 otherwise.
+ */
 static int get_ip_scope(char *str_addr)
 {
 	struct ifaddrs *ifaddr, *ifa;
@@ -855,11 +910,6 @@ static int bind_force_send_ip(int sock_idx)
 	return 0;
 }
 
-static inline int str_cmp(const str *a, const str *b)
-{
-	return !(a->len == b->len && !strncmp(a->s, b->s, a->len));
-}
-
 static inline int str_eq(const str *p, const char *q)
 {
 	int l = strlen(q);
@@ -870,6 +920,18 @@ static inline int str_eq(const str *p, const char *q)
 	return 1;
 }
 
+/**
+ * @brief Checks if a string starts with a given prefix and updates the string to
+ * 	remove the prefix if it matches.
+ *
+ * @details Checks if the string pointed to by 'p' starts with the string 'q'.
+ * If it does, it updates the string 'out' to be a copy of 'p' with 'q' removed from the beginning.
+ *
+ * @param p The string to check for the prefix.
+ * @param q The prefix to check for.
+ * @param out The string that will be updated if 'p' starts with 'q'.
+ * @return 1 if 'p' starts with 'q', 0 otherwise.
+ */
 static inline int str_prefix(const str *p, const char *q, str *out)
 {
 	int l = strlen(q);
@@ -882,7 +944,21 @@ static inline int str_prefix(const str *p, const char *q, str *out)
 	out->len -= l;
 	return 1;
 }
-/* handle either "foo-bar" or "foo=bar" from flags */
+
+/**
+ * @brief Checks if a string starts with a given prefix and updates the string
+ * to remove the prefix if it matches.
+ *
+ * @details If the string is exactly equal to the prefix, it sets the output to a provided value.
+ *
+ * handle either "foo-bar" or "foo=bar" from flags
+ *
+ * @param p The string to check for the prefix.
+ * @param q The prefix to check for.
+ * @param v The value to set the output to if p is exactly equal to q.
+ * @param out The string that will be updated if p starts with q.
+ * @return 1 if p starts with q or is exactly equal to q (and valid conditions are met), 0 otherwise.
+ */
 static inline int str_key_val_prefix(
 		const str *p, const char *q, const str *v, str *out)
 {
@@ -904,7 +980,17 @@ static inline int str_key_val_prefix(
 	return 1;
 }
 
-
+/**
+ * @brief Stores a new RTP engine set URL from cfg modparam.
+ *
+ * @details Dynamically allocates memory to store a new RTP engine set URL.
+ * It checks if the input URL is valid and if there is enough memory available.
+ * If successful, it increments the counter of stored RTP engine sets.
+ *
+ * @param type The type of the module parameter.
+ * @param val The value of the module parameter, expected to be a string.
+ * @return 0 on success, -1 on failure.
+ */
 static int rtpengine_set_store(modparam_t type, void *val)
 {
 
@@ -948,6 +1034,17 @@ static int rtpengine_set_store(modparam_t type, void *val)
 	return 0;
 }
 
+/**
+ * @brief Searches for a specific RTP engine node within a given RTP engine set based on its URL.
+ *
+ * @details This function iterates through the linked list of RTP engine nodes within the specified
+ * RTP engine set, comparing each node's URL with the provided URL. If a match is found, the function
+ * returns the matched node.
+ *
+ * @param rtpp_list The RTP engine set to search within.
+ * @param url The URL to match against the RTP engine nodes.
+ * @return The RTP engine node with the matching URL, or NULL if no match is found.
+ */
 struct rtpp_node *get_rtpp_node(struct rtpp_set *rtpp_list, str *url)
 {
 	struct rtpp_node *rtpp_node;
@@ -959,7 +1056,7 @@ struct rtpp_node *get_rtpp_node(struct rtpp_set *rtpp_list, str *url)
 	lock_get(rtpp_list->rset_lock);
 	rtpp_node = rtpp_list->rn_first;
 	while(rtpp_node) {
-		if(str_cmp(&rtpp_node->rn_url, url) == 0) {
+		if(str_strcmp(&rtpp_node->rn_url, url) == 0) {
 			lock_release(rtpp_list->rset_lock);
 			return rtpp_node;
 		}
@@ -970,6 +1067,16 @@ struct rtpp_node *get_rtpp_node(struct rtpp_set *rtpp_list, str *url)
 	return NULL;
 }
 
+/**
+ * @brief Retrieves or creates an RTP engine set based on the provided set ID.
+ *
+ * @details Search for an RTP engine set with the specified ID within the list of RTP engine sets.
+ * If the set is found, it is returned. If not, a new RTP engine set is created with the specified
+ * ID and added to the list.
+ *
+ * @param set_id The ID of the RTP engine set to retrieve or create.
+ * @return The RTP engine set with the specified ID, or NULL if creation fails due to memory issues.
+ */
 struct rtpp_set *get_rtpp_set(unsigned int set_id)
 {
 	struct rtpp_set *rtpp_list;
@@ -1035,7 +1142,21 @@ struct rtpp_set *get_rtpp_set(unsigned int set_id)
 	return rtpp_list;
 }
 
-
+/**
+ * @brief Adds a new RTP engine instance to the given RTP engine set.
+ *
+ * @details Parse the given RTP engine string, which can include a weight and/or a disabled flag.
+ * It then adds a new RTP engine instance to the specified RTP engine set with the parsed properties.
+ *
+ * @param rtpp_list The RTP engine set to which the new instance will be added.
+ * @param rtpengine The string representation of the RTP engine instance, including its URL and optional weight and disabled flag.
+ * @param weight The weight of the RTP engine instance, used for load balancing.
+ * @param disabled A flag indicating if the RTP engine instance is disabled.
+ * @param ticks The number of ticks until the RTP engine instance is rechecked.
+ * @param isDB A flag indicating if the RTP engine instance is being added from the database.
+ *
+ * @return Returns 0 on success, -1 on failure.
+ */
 int add_rtpengine_socks(struct rtpp_set *rtpp_list, char *rtpengine,
 		unsigned int weight, int disabled, unsigned int ticks, int isDB)
 {
@@ -1600,6 +1721,22 @@ static int fixup_set_id(void **param, int param_no)
 	return 0;
 }
 
+static int fixup_free_set_id(void **param, int param_no)
+{
+	pkg_free(*param);
+	return 0;
+}
+
+/**
+ * @brief Sends a ping command to an RTP engine node and checks the response.
+ *
+ * @details Initialize a bencode buffer, construct a ping command dictionary,
+ * send the command to the specified RTP engine node, and then decodes the response.
+ * It checks if the response is a dictionary and if it contains the expected "pong" result.
+ *
+ * @param node The RTP engine node to send the ping command to.
+ * @return Returns 0 on success (pong received), -1 on failure.
+ */
 static int rtpp_test_ping(struct rtpp_node *node)
 {
 	bencode_buffer_t bencbuf;
@@ -1685,6 +1822,21 @@ static void rtpengine_rpc_reload(rpc_t *rpc, void *ctx)
 	rpc->rpl_printf(ctx, "Ok. Reload successful.");
 }
 
+/**
+ * @brief Iterates over the RTP engine nodes and filter them based on the provided URL.
+ *
+ * @details Iterate over the RTP engine nodes in the system, filtering them based on the provided URL.
+ * If the @p rtpp_url is "all", it iterates over all RTP engine nodes. Otherwise, it iterates
+ * over the nodes that match the provided URL. For each matching node, it calls the provided
+ * callback function @p cb.
+ *
+ * @param rpc The RPC instance.
+ * @param ctx The context.
+ * @param rtpp_url The RTP proxy URL to filter by.
+ * @param cb The callback function to call for each matching node.
+ * @param data The data to pass to the callback function.
+ * @return 0 on success, -1 on error.
+ */
 static int rtpengine_rpc_iterate(rpc_t *rpc, void *ctx, const str *rtpp_url,
 		int (*cb)(struct rtpp_node *, struct rtpp_set *, void *), void *data)
 {
@@ -1761,6 +1913,19 @@ static int rtpengine_rpc_iterate(rpc_t *rpc, void *ctx, const str *rtpp_url,
 	return found;
 }
 
+/**
+ * @brief Adds information about an RTP engine node to the RPC response.
+ *
+ * @details Constructs and adds a structured data block to the RPC response,
+ * containing details about the specified RTP engine node, such as its URL, set ID,
+ * index, weight, disabled status, and recheck ticks.
+ *
+ * @param ptrsp A pointer to an array of pointers containing the RPC context and other necessary data.
+ * @param crt_rtpp The RTP engine node for which to add information.
+ * @param rtpp_list The RTP engine set to which the node belongs.
+ *
+ * @return Returns 0 on success, -1 on failure.
+ */
 static int add_rtpp_node_info(
 		void *ptrsp, struct rtpp_node *crt_rtpp, struct rtpp_set *rtpp_list)
 {
@@ -1801,6 +1966,18 @@ static int add_rtpp_node_info(
 	return 0;
 }
 
+/**
+ * @brief Callback to enable or disable an RTP engine node.
+ *
+ * @details Called for each RTP engine node during an iteration process.
+ * It enables or disables the node based on the @p flagp provided and updates its status accordingly.
+ *
+ * @param crt_rtpp The RTP engine node to be enabled or disabled.
+ * @param rtpp_list The RTP engine set to which the node belongs. (not used in this function)
+ * @param flagp A pointer to a flag indicating whether to enable (1) or disable (0) the node.
+ *
+ * @return Returns 0 on success, -1 on failure.
+ */
 static int rtpengine_iter_cb_enable(
 		struct rtpp_node *crt_rtpp, struct rtpp_set *rtpp_list, void *flagp)
 {
@@ -1899,7 +2076,12 @@ static int rtpengine_iter_cb_ping(
 		*found_rtpp_disabled = 1;
 		crt_rtpp->rn_disabled = 1;
 	}
-
+	/* if ping success, enable the rtpp and reset ticks, ONLY IF was not disabled manually */
+	else if(crt_rtpp->rn_recheck_ticks != RTPENGINE_MAX_RECHECK_TICKS) {
+		crt_rtpp->rn_recheck_ticks = RTPENGINE_MIN_RECHECK_TICKS;
+		crt_rtpp->rn_disabled = 0;
+		*found_rtpp_disabled = 0;
+	}
 	return 0;
 }
 
@@ -1969,7 +2151,7 @@ static int mod_init(void)
 {
 	int i;
 	pv_spec_t *avp_spec;
-	unsigned short avp_flags;
+	avp_flags_t avp_flags;
 	str s;
 
 	_rtpe_list_version =
@@ -2177,6 +2359,11 @@ static int mod_init(void)
 		}
 	}
 
+	/* Enable ping timer if interval is positive */
+	if(rtpengine_ping_interval > 0) {
+		register_timer(rtpengine_ping_check_timer, 0, rtpengine_ping_interval);
+	}
+
 	dtmf_event_rt = route_lookup(&event_rt, "rtpengine:dtmf-event");
 	if(dtmf_event_rt >= 0 && event_rt.rlist[dtmf_event_rt] == 0) {
 		dtmf_event_rt = -1; /* disable */
@@ -2257,9 +2444,17 @@ static int mod_init(void)
 	} while(0)
 
 /**
- * build rtp enigne sockets
- * - lmode: locking mode (1 - lock if needed; 0 - no locking)
- * - rtest: rtpengine testing (1 - test if active; 0 - no test done)
+ * @brief Builds RTP engine sockets based on the current RTP engine list.
+ *
+ * @details Iterate through the list of RTP engines, closes any existing sockets,
+ * and attempts to create new sockets for each RTP engine instance. It handles both
+ * IPv4 and IPv6 connections, sets up socket options for MTU discovery and TOS,
+ * and binds the socket to a specific address if necessary. If a socket cannot be
+ * created or connected, it retries later.
+ *
+ * @param lmode Locking mode (1 - lock if needed; 0 - no locking)
+ * @param rtest RTP engine testing (1 - test if active; 0 - no test done)
+ * @return 0 on success, -1 on failure
  */
 static int build_rtpp_socks(int lmode, int rtest)
 {
@@ -2787,6 +2982,10 @@ static int parse_from_to_tags(struct ng_flags_parse *ng_flags,
 				bencode_dictionary_add_str(
 						ng_flags->dict, "to-tag", &ng_flags->to_tag);
 		}
+	} else if(op == OP_SUBSCRIBE_REQUEST || op == OP_UNSUBSCRIBE) {
+		bencode_dictionary_add_str(
+				ng_flags->dict, "from-tag", &ng_flags->from_tag);
+		return 0;
 	} else if((msg->first_line.type == SIP_REQUEST && op != OP_ANSWER)
 			  || (msg->first_line.type == SIP_REPLY && op == OP_DELETE)
 			  || (msg->first_line.type == SIP_REPLY && op == OP_ANSWER)
@@ -3098,7 +3297,8 @@ error:
  */
 static bencode_item_t *rtpp_function_call(bencode_buffer_t *bencbuf,
 		struct sip_msg *msg, enum rtpe_operation op, str *flags,
-		str *p_viabranch, str *body_out, str *cl_field)
+		str *p_viabranch, str *body_out, str *cl_field,
+		bencode_item_t *extra_dict)
 {
 	struct ng_flags_parse ng_flags;
 	bencode_item_t *item, *resp;
@@ -3141,9 +3341,18 @@ static bencode_item_t *rtpp_function_call(bencode_buffer_t *bencbuf,
 	}
 
 	/* initialize some basic bencode items */
-	ng_flags.dict = bencode_dictionary(bencbuf);
+	if(!extra_dict) {
+		ng_flags.dict = bencode_dictionary(bencbuf);
+		if(parse_by_module) {
+			ng_flags.flags = bencode_list(bencbuf);
+		}
+	} else {
+		ng_flags.dict = extra_dict;
+		ng_flags.flags = bencode_dictionary_get(ng_flags.dict, "flags");
+		bencode_dictionary_get_str(ng_flags.dict, "call-id", &ng_flags.call_id);
+	}
+
 	if(parse_by_module) {
-		ng_flags.flags = bencode_list(bencbuf);
 		ng_flags.received_from = bencode_list(bencbuf);
 	}
 
@@ -3191,7 +3400,7 @@ static bencode_item_t *rtpp_function_call(bencode_buffer_t *bencbuf,
 	 */
 
 	/* affects to-tag parsing */
-	ng_flags.to = (op == OP_DELETE) ? 0 : 1;
+	ng_flags.to = (!parse_by_module || op != OP_DELETE) ? 1 : 0;
 
 	/* module specific parsing */
 	if(parse_by_module && flags && parse_flags(&ng_flags, msg, &op, flags->s))
@@ -3496,7 +3705,8 @@ static int rtpp_function_call_simple(
 	flags = parms[0];
 	viabranch = parms[1];
 
-	ret = rtpp_function_call(&bencbuf, msg, op, flags, viabranch, NULL, NULL);
+	ret = rtpp_function_call(
+			&bencbuf, msg, op, flags, viabranch, NULL, NULL, NULL);
 	if(!ret)
 		return -1;
 
@@ -3519,12 +3729,12 @@ static int rtpengine_simple_wrap(
 
 static bencode_item_t *rtpp_function_call_ok(bencode_buffer_t *bencbuf,
 		struct sip_msg *msg, enum rtpe_operation op, str *flags, str *viabranch,
-		str *body, str *cl_field)
+		str *body, str *cl_field, bencode_item_t *dict)
 {
 	bencode_item_t *ret;
 
 	ret = rtpp_function_call(
-			bencbuf, msg, op, flags, viabranch, body, cl_field);
+			bencbuf, msg, op, flags, viabranch, body, cl_field, dict);
 	if(!ret)
 		return NULL;
 
@@ -3537,7 +3747,64 @@ static bencode_item_t *rtpp_function_call_ok(bencode_buffer_t *bencbuf,
 	return ret;
 }
 
+/**
+* @brief Timer function to check the status of rtpengine nodes.
+* Check every node in the set and if it is not responding,
+* mark it as disabled.
+ */
+static void rtpengine_ping_check_timer(unsigned int ticks, void *param)
+{
+	struct rtpp_set *rtpp_list;
+	struct rtpp_node *crt_rtpp;
+	int err = 0;
+	int ret;
+	int rtpp_disabled = 0;
 
+	/* No need to test them while building */
+	if(build_rtpp_socks(1, 0)) {
+		return;
+	}
+	/* Most of this is from rtpengine_rpc_iterate functions maybe split? */
+	LM_DBG("Pinging all enabled rtpengines...\n");
+	lock_get(rtpp_set_list->rset_head_lock);
+	for(rtpp_list = rtpp_set_list->rset_first; rtpp_list != NULL;
+			rtpp_list = rtpp_list->rset_next) {
+
+		lock_get(rtpp_list->rset_lock);
+		for(crt_rtpp = rtpp_list->rn_first; crt_rtpp != NULL;
+				crt_rtpp = crt_rtpp->rn_next) {
+
+			if(!crt_rtpp->rn_displayed) {
+				continue;
+			}
+
+			/* Ping all available nodes */
+			ret = rtpengine_iter_cb_ping(crt_rtpp, rtpp_list, &rtpp_disabled);
+			if(ret) {
+				err = 1;
+				break;
+			}
+		}
+		lock_release(rtpp_list->rset_lock);
+
+		if(err)
+			break;
+	}
+	lock_release(rtpp_set_list->rset_head_lock);
+}
+
+/**
+ * @brief Tests the RTP engine node by sending a ping command with some additional logic
+ * to skip it.
+ *
+ * @details Similar to rtpp_test_ping but provides additional logic for handling disabled
+ * nodes, ping intervals, and recheck ticks.
+ *
+ * @param node The RTP engine node to test.
+ * @param isdisabled Flag indicating if the node is currently disabled.
+ * @param force Flag to force the test even if the node is disabled or ping_interval is set.
+ * @return Returns 0 if the node is NOT disabled, 1 otherwise.
+ */
 static int rtpp_test(struct rtpp_node *node, int isdisabled, int force)
 {
 	bencode_buffer_t bencbuf;
@@ -3549,9 +3816,16 @@ static int rtpp_test(struct rtpp_node *node, int isdisabled, int force)
 		LM_DBG("rtpp %s disabled for ever\n", node->rn_url.s);
 		return 1;
 	}
+
 	if(force == 0) {
 		if(isdisabled == 0)
 			return 0;
+		/* If ping_interval is set, the timer will ping and test
+		the rtps. No need to do something during routing.
+		Return the current status.
+		*/
+		if(rtpengine_ping_interval > 0)
+			return isdisabled;
 		if(node->rn_recheck_ticks > get_ticks())
 			return 1;
 	}
@@ -3770,7 +4044,8 @@ out:
 	return cp;
 
 badproxy:
-	close(fd);
+	if(fd >= 0)
+		close(fd);
 	return NULL;
 }
 
@@ -4090,7 +4365,7 @@ static int get_extra_id(struct sip_msg *msg, str *id_str)
 static int set_rtpengine_set_from_avp(struct sip_msg *msg, int direction)
 {
 	struct usr_avp *avp;
-	int_str setid_val;
+	avp_value_t setid_val;
 
 	if((setid_avp_param == NULL)
 			|| (avp = search_first_avp(
@@ -4242,7 +4517,7 @@ static void parse_call_stats_1(struct minmax_mos_label_stats *mmls,
 		if(!bencode_dictionary_get_str(tag_dict, "label", &check))
 			continue;
 		LM_DBG("rtpengine: XXX got label %.*s\n", check.len, check.s);
-		if(str_cmp(&check, &label))
+		if(str_strcmp(&check, &label))
 			continue;
 		LM_DBG("rtpengine: XXX label match\n");
 		medias =
@@ -4363,7 +4638,7 @@ static int rtpengine_delete(struct sip_msg *msg, void *d)
 	viabranch = parms[1];
 
 	bencode_item_t *ret = rtpp_function_call_ok(
-			&bencbuf, msg, OP_DELETE, flags, viabranch, NULL, NULL);
+			&bencbuf, msg, OP_DELETE, flags, viabranch, NULL, NULL, NULL);
 	if(!ret)
 		return -1;
 	parse_call_stats(ret, msg);
@@ -4383,7 +4658,7 @@ static int rtpengine_query(struct sip_msg *msg, void *d)
 	viabranch = parms[1];
 
 	bencode_item_t *ret = rtpp_function_call_ok(
-			&bencbuf, msg, OP_QUERY, flags, viabranch, NULL, NULL);
+			&bencbuf, msg, OP_QUERY, flags, viabranch, NULL, NULL, NULL);
 	if(!ret)
 		return -1;
 	parse_call_stats(ret, msg);
@@ -4691,7 +4966,7 @@ static int rtpengine_offer_answer(
 	viabranch = parms[1];
 
 	dict = rtpp_function_call_ok(
-			&bencbuf, msg, op, flags, viabranch, &body, &cl_field);
+			&bencbuf, msg, op, flags, viabranch, &body, &cl_field, NULL);
 	if(!dict)
 		return -1;
 
@@ -4838,7 +5113,7 @@ static int rtpengine_play_media(
 	viabranch = parms[1];
 
 	ret = rtpp_function_call_ok(
-			&bencbuf, msg, OP_PLAY_MEDIA, flags, viabranch, NULL, NULL);
+			&bencbuf, msg, OP_PLAY_MEDIA, flags, viabranch, NULL, NULL, NULL);
 	if(!ret)
 		return -1;
 	if(media_duration_pvar) {
@@ -4903,7 +5178,7 @@ static int rtpengine_rtpstat_wrap(
 	res = parms[1];
 
 	dict = rtpp_function_call_ok(
-			&bencbuf, msg, OP_QUERY, NULL, NULL, NULL, NULL);
+			&bencbuf, msg, OP_QUERY, NULL, NULL, NULL, NULL, NULL);
 	if(!dict)
 		return -1;
 
@@ -5073,7 +5348,7 @@ static int rtpengine_query_v_wrap(
 	dst = parms[1];
 
 	dict = rtpp_function_call_ok(
-			&bencbuf, msg, OP_QUERY, NULL, NULL, NULL, NULL);
+			&bencbuf, msg, OP_QUERY, NULL, NULL, NULL, NULL, NULL);
 	if(!dict) {
 		return -1;
 	}
@@ -5777,4 +6052,187 @@ int mod_register(char *path, int *dlflags, void *p1, void *p2)
 {
 	sr_kemi_modules_add(sr_kemi_rtpengine_exports);
 	return 0;
+}
+
+/**
+ * load rtpengine module API
+ */
+static int bind_rtpengine(rtpengine_api_t *api)
+{
+	if(!api) {
+		LM_ERR("Invalid parameter value\n");
+		return -1;
+	}
+	api->rtpengine_start_recording = ki_start_recording;
+	api->rtpengine_answer = ki_rtpengine_answer2;
+	api->rtpengine_offer = ki_rtpengine_offer2;
+	api->rtpengine_delete = ki_rtpengine_delete2;
+	api->rtpengine_subscribe_request = ki_rtpengine_subscribe_request;
+	api->rtpengine_subscribe_answer = ki_rtpengine_subscribe_answer;
+	api->rtpengine_unsubscribe = ki_rtpengine_unsubscribe;
+
+	return 0;
+}
+
+static bencode_item_t *rtpengine_subscribe_wrap(struct rtpengine_session *sess,
+		enum rtpe_operation op, str *to_tag, str *flags,
+		unsigned int subscribe_flags, str *body)
+{
+	static bencode_buffer_t bencbuf;
+	bencode_item_t *dict, *list = NULL;
+	bencode_item_t *ret;
+	struct sip_msg *msg;
+	str *viabranch = NULL;
+
+	if(bencode_buffer_init(&bencbuf)) {
+		LM_ERR("could not initialize bencode_buffer_t\n");
+		return NULL;
+	}
+	dict = bencode_dictionary(&bencbuf);
+
+	if(sess->callid)
+		bencode_dictionary_add_str(dict, "call-id", sess->callid);
+	else if(sess->msg)
+		bencode_dictionary_add_str(dict, "call-id", &sess->msg->callid->body);
+	if(sess->branch != RTPENGINE_ALL_BRANCHES)
+		bencode_dictionary_add_str(dict, "via-branch", viabranch);
+	if(to_tag && to_tag->len)
+		bencode_dictionary_add_str(dict, "to-tag", to_tag);
+	if(subscribe_flags & RTP_SUBSCRIBE_MODE_SIPREC) {
+		list = bencode_list(&bencbuf);
+		bencode_list_add_string(list, "all");
+		bencode_list_add_string(list, "siprec");
+	} else if((subscribe_flags & RTP_COPY_LEG_BOTH) == RTP_COPY_LEG_BOTH) {
+		list = bencode_list(&bencbuf);
+		bencode_list_add_string(list, "all");
+	} else if(subscribe_flags & RTP_COPY_LEG_CALLER && sess->from_tag) {
+		bencode_dictionary_add_str(dict, "from-tag", sess->from_tag);
+	} else if(sess->to_tag) {
+		bencode_dictionary_add_str(dict, "from-tag", sess->to_tag);
+	}
+	if(subscribe_flags & RTP_SUBSCRIBE_MODE_DISABLE) {
+		if(!list)
+			list = bencode_list(&bencbuf);
+		bencode_list_add_string(list, "inactive");
+	}
+	if(list)
+		bencode_dictionary_add(dict, "flags", list);
+
+	if(op == OP_SUBSCRIBE_ANSWER)
+		bencode_dictionary_add_str(dict, "sdp", body);
+
+	msg = (sess->msg ? sess->msg : faked_msg_get_next());
+
+	ret = rtpp_function_call_ok(
+			&bencbuf, msg, op, flags, NULL, NULL, NULL, dict);
+
+	return ret;
+}
+
+static str *rtpengine_new_subs(str *tag)
+{
+	str *to_tag = shm_malloc(sizeof *to_tag + tag->len);
+	if(to_tag) {
+		to_tag->s = (char *)(to_tag + 1);
+		to_tag->len = tag->len;
+		memcpy(to_tag->s, tag->s, tag->len);
+	}
+	return to_tag;
+}
+
+static void rtpengine_copy_streams(bencode_item_t *streams,
+		struct rtpengine_streams *ret, struct rtpengine_session *sess)
+{
+	bencode_item_t *item, *medias;
+	str tmp = STR_NULL;
+	int leg = RTPENGINE_CALLEE, medianum, label, s;
+	if(!ret || !streams)
+		return;
+	ret->count = 0;
+	s = 0;
+	for(item = streams->child; item; item = item->sibling) {
+		tmp.s = bencode_dictionary_get_string(item, "tag", &tmp.len);
+		if(!tmp.s)
+			LM_WARN("could not retrieve tag - placing to %s\n",
+					(leg == RTPENGINE_CALLER ? "caller" : "callee"));
+		else {
+			if(sess->from_tag && sess->from_tag->len > 0
+					&& str_strcmp(&tmp, sess->from_tag) == 0)
+				leg = RTPENGINE_CALLER;
+			else if(sess->to_tag && sess->to_tag->len > 0
+					&& str_strcmp(&tmp, sess->to_tag) != 0)
+				leg = RTPENGINE_CALLER;
+			else
+				leg = RTPENGINE_CALLEE;
+		}
+		medias = bencode_dictionary_get_expect(item, "medias", BENCODE_LIST);
+		if(!medias)
+			continue;
+		for(medias = medias->child; medias; medias = medias->sibling) {
+			s = ret->count;
+			if(s == RTP_COPY_MAX_STREAMS) {
+				LM_WARN("maximum amount of streams %d reached!\n",
+						RTP_COPY_MAX_STREAMS);
+				return;
+			}
+			medianum = bencode_dictionary_get_integer(item, "index", 0);
+			tmp.s = bencode_dictionary_get_string(medias, "label", &tmp.len);
+			if(str2sint(&tmp, &label) < 0) {
+				LM_WARN("invalid label %.*s - not integer - skipping\n",
+						tmp.len, tmp.s);
+				continue;
+			}
+			ret->streams[s].leg = leg;
+			ret->streams[s].label = label;
+			ret->streams[s].medianum = medianum;
+			ret->count++;
+		}
+	}
+}
+
+static int ki_rtpengine_subscribe_request(struct rtpengine_session *sess,
+		str **to_tag, str *flags, unsigned int subscribe_flags, str *ret_body,
+		struct rtpengine_streams *ret_streams)
+{
+	str tmp;
+	bencode_item_t *ret;
+	ret = rtpengine_subscribe_wrap(
+			sess, OP_SUBSCRIBE_REQUEST, *to_tag, flags, subscribe_flags, NULL);
+	if(!ret)
+		return -1;
+	if(!bencode_dictionary_get_str_dup(ret, "sdp", ret_body))
+		LM_ERR("failed to extract sdp body from proxy reply\n");
+	if(ret_streams)
+		rtpengine_copy_streams(
+				bencode_dictionary_get(ret, "tag-medias"), ret_streams, sess);
+	if(!bencode_dictionary_get_str(ret, "to-tag", &tmp))
+		LM_ERR("failed to extract to-tag from proxy reply\n");
+	else
+		*to_tag = rtpengine_new_subs(&tmp);
+	bencode_buffer_free(bencode_item_buffer(ret));
+	return 0;
+}
+
+static int ki_rtpengine_subscribe_answer(
+		struct rtpengine_session *sess, str *to_tag, str *flags, str *body)
+{
+	bencode_item_t *ret;
+	ret = rtpengine_subscribe_wrap(
+			sess, OP_SUBSCRIBE_ANSWER, to_tag, flags, 0, body);
+	if(!ret)
+		return -1;
+	bencode_buffer_free(bencode_item_buffer(ret));
+	return ret != NULL;
+}
+
+static int ki_rtpengine_unsubscribe(
+		struct rtpengine_session *sess, str *to_tag, str *flags)
+{
+	bencode_item_t *ret;
+	ret = rtpengine_subscribe_wrap(
+			sess, OP_UNSUBSCRIBE, to_tag, flags, 0, NULL);
+	if(!ret)
+		return -1;
+	bencode_buffer_free(bencode_item_buffer(ret));
+	return ret != NULL;
 }
