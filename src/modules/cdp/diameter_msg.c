@@ -426,12 +426,13 @@ AAAReturnCode AAAFreeAVPList(AAA_AVP_LIST *avpList)
  */
 AAAReturnCode AAAFreeMessage(AAAMessage **msg)
 {
-	LM_DBG("AAAFreeMessage: Freeing message (%p) %d\n", *msg,
-			(*msg)->commandCode);
 	/* param check */
 	if(!msg || !(*msg))
 		goto done;
 
+	LM_DBG("AAAFreeMessage: Freeing message (%p) %d\n", *msg,
+			(*msg)->commandCode);
+	
 	/* free the avp list */
 	AAAFreeAVPList(&((*msg)->avpList));
 
