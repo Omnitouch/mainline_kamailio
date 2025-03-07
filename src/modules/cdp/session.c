@@ -358,6 +358,14 @@ void del_session(cdp_session_t *x)
 	else if(x->next)
 		x->next->prev = x->prev;
 
+	if ((NULL == sessions[x->hash].head) ||
+	    (NULL == sessions[x->hash].tail))
+	{
+		/* Prevent bug where tail is NULL but head is not NULL or vice versa */
+		sessions[x->hash].head = NULL;
+		sessions[x->hash].tail = NULL;
+	}
+
 	AAASessionsUnlock(hash);
 
 	free_session(x);

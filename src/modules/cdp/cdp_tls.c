@@ -252,9 +252,18 @@ cleanup:
 #if OPENSSL_VERSION_NUMBER >= 0x10100000L
 void cleanup_ssl(SSL_CTX *tls_ctx, SSL *tls_conn)
 {
-	SSL_shutdown(tls_conn);
-	SSL_free(tls_conn);
-	SSL_CTX_free(tls_ctx);
+	if (NULL != tls_conn) {
+		SSL_shutdown(tls_conn);
+		SSL_free(tls_conn);
+	} else {
+		LM_ERR("tls_conn is NULL\n");
+	}
+	
+	if (NULL != tls_ctx) {
+		SSL_CTX_free(tls_ctx);
+	} else {
+		LM_ERR("tls_ctx is NULL\n");
+	}
 }
 #endif
 

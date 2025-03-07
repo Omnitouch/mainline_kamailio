@@ -310,6 +310,7 @@ int auth_client_statefull_sm_process(
 					//Where must we free this?
 					s->dest_realm.s =
 							(char *)shm_malloc(msg->dest_realm->data.len);
+					assert(NULL != s->dest_realm.s);
 					memcpy(s->dest_realm.s, msg->dest_realm->data.s,
 							msg->dest_realm->data.len);
 					s->dest_realm.len = msg->dest_realm->data.len;
