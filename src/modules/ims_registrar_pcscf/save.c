@@ -349,6 +349,7 @@ int save_pending(struct sip_msg *_m, udomain_t *_d)
 	struct sip_uri parsed_received;
 	char srcip[50];
 	memset(&ci, 0, sizeof(struct pcontact_info));
+	int need_to_free_sec_params = 1;
 
 	vb = trust_bottom_via ? cscf_get_last_via(_m) : cscf_get_ue_via(_m);
 	port = vb->port ? vb->port : 5060;
@@ -495,9 +496,13 @@ int save_pending(struct sip_msg *_m, udomain_t *_d)
 			// Update security parameters only for the pending contacts
 			if(sec_params) {
 				if(ul.update_temp_security(
-						   _d, sec_params->type, sec_params, pcontact)
-						!= 0) {
-					LM_ERR("Error updating temp security\n");
+					_d, sec_params->type, sec_params, pcontact)
+					!= 0) {
+						LM_ERR("Error updating temp security\n");
+					} else {
+					// On successful update the responsibility of freeing the sec_params
+					// is now on the ims_usrloc_pcscf module
+					need_to_free_sec_params = 0;
 				}
 			}
 		}
@@ -531,8 +536,12 @@ int save_pending(struct sip_msg *_m, udomain_t *_d)
 		}
 	}
 
-	ul.unlock_udomain(_d, &ci.via_host, ci.via_port, ci.via_prot);
+	if (need_to_free_sec_params) {
+		free_security(sec_params);
+	}
+	free_security(sec_verify_params);
 
+	ul.unlock_udomain(_d, &ci.via_host, ci.via_port, ci.via_prot);
 
 	return 1;
 

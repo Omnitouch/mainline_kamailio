@@ -737,6 +737,11 @@ int update_temp_security(
 		LM_ERR("Error updating temp security for contact in DB\n");
 		return -1;
 	}
+
+	if (_c->security_temp) {
+		LM_ERR("Error updating temp security, one was already assigned? Potential memory leak here\n");
+	}
+
 	_c->security_temp = _s;
 	return 0;
 }

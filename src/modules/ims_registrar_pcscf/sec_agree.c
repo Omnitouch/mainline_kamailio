@@ -210,28 +210,60 @@ static security_t *parse_sec_agree(struct hdr_field *h)
 	return params;
 
 cleanup:
-	// The same piece of code also lives in modules/ims_usrloc_pcscf/pcontact.c
-	// Function - free_security()
-	// Keep them in sync!
-	if(params) {
-		shm_free(params->sec_header.s);
-		shm_free(params->data.ipsec);
-		if(params->type == SECURITY_IPSEC && params->data.ipsec) {
-			shm_free(params->data.ipsec->ealg.s);
-			shm_free(params->data.ipsec->r_ealg.s);
-			shm_free(params->data.ipsec->ck.s);
-			shm_free(params->data.ipsec->alg.s);
-			shm_free(params->data.ipsec->r_alg.s);
-			shm_free(params->data.ipsec->ik.s);
-			shm_free(params->data.ipsec->prot.s);
-			shm_free(params->data.ipsec->mod.s);
-			shm_free(params->data.ipsec);
-		}
-
-		shm_free(params);
-	}
+	free_security(params);
 
 	return NULL;
+}
+
+// The same piece of code also lives in modules/ims_usrloc_pcscf/pcontact.c
+// Function - free_security()
+// Keep them in sync!
+void free_security(security_t *_p)
+{
+	if(!_p) {
+		return;
+	}
+
+	if(_p->sec_header.s) {
+		shm_free(_p->sec_header.s);
+	}
+
+	switch(_p->type) {
+		case SECURITY_IPSEC:
+			if(_p->data.ipsec) {
+				if(_p->data.ipsec->ealg.s)
+					shm_free(_p->data.ipsec->ealg.s);
+				if(_p->data.ipsec->r_ealg.s)
+					shm_free(_p->data.ipsec->r_ealg.s);
+				if(_p->data.ipsec->ck.s)
+					shm_free(_p->data.ipsec->ck.s);
+				if(_p->data.ipsec->alg.s)
+					shm_free(_p->data.ipsec->alg.s);
+				if(_p->data.ipsec->r_alg.s)
+					shm_free(_p->data.ipsec->r_alg.s);
+				if(_p->data.ipsec->ik.s)
+					shm_free(_p->data.ipsec->ik.s);
+				if(_p->data.ipsec->prot.s)
+					shm_free(_p->data.ipsec->prot.s);
+				if(_p->data.ipsec->mod.s)
+					shm_free(_p->data.ipsec->mod.s);
+
+				shm_free(_p->data.ipsec);
+			}
+			break;
+
+		case SECURITY_TLS:
+			if(_p->data.tls) {
+				shm_free(_p->data.tls);
+			}
+			break;
+
+		case SECURITY_NONE:
+			//Nothing to deallocate
+			break;
+	}
+
+	shm_free(_p);
 }
 
 
