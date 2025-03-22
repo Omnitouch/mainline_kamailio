@@ -275,13 +275,21 @@ int isc_third_party_reg(
      * this does not work correctly if the user has multiple contacts
      * and register/deregisters them individually!!!
      */
-no_pai:
+	no_pai:
 	expires = cscf_get_max_expires(msg, 0);
 
 	/* Get P-Visited-Network-Id header */
 	pvni = cscf_get_visited_network_id(msg, &hdr);
 	/* Get P-Access-Network-Info header */
 	pani = cscf_get_access_network_info(msg, &hdr);
+
+	/* Get User Agent*/
+	str user_agent = cscf_get_user_agent(msg);
+	if (user_agent.len > 0) {
+		LM_DBG("User-Agent: %.*s\n", user_agent.len, user_agent.s);
+	} else {
+		LM_DBG("No User-Agent header found\n");
+	}
 
 	if(build_path_vector(msg, &path, &path_received) < 0) {
 		LM_ERR("Failed to parse PATH header for third-party reg\n");
@@ -304,14 +312,18 @@ no_pai:
 		r.pvni = pvni;
 		r.pani = pani;
 		r.cv = cv;
+		r.user_agent = user_agent;
 		if(m->service_info.s && m->service_info.len) {
+			LM_DBG("Set body content type to CT_SERVICE_INFO");
 			r.body.content_type = CT_SERVICE_INFO;
 			r.body.content = m->service_info;
 		} else if(m->include_register_request) {
+			LM_DBG("Set body content type to CT_REGISTER_REQ");
 			r.body.content_type = CT_REGISTER_REQ;
 			r.body.content.s = msg->first_line.u.request.method.s;
 			r.body.content.len = msg->len;
 		} else if(m->include_register_response) {
+			LM_DBG("Set body content type to CT_REGISTER_RESP");
 			struct bookmark dummy_bm;
 			r.body.content_type = CT_REGISTER_RESP;
 			r.body.content.s = build_res_buf_from_sip_req(200, &reg_resp_200OK,
@@ -322,6 +334,7 @@ no_pai:
 				r.body.content_type = CT_NONE;
 			}
 		} else {
+			LM_DBG("Set body content type to CT_NONE as seems no m. data set");
 			r.body.content_type = CT_NONE;
 		}
 		r.path = path;
@@ -352,6 +365,9 @@ static str p_access_network_info_e = {"\r\n", 2};
 
 static str p_charging_vector_s = {"P-Charging-Vector: ", 19};
 static str p_charging_vector_e = {"\r\n", 2};
+
+static str user_agent_hdr_s = {"User-Agent: ", 12};
+static str user_agent_hdr_e = {"\r\n", 2};
 
 static str path_s = {"Path: ", 6};
 static str path_e = {"\r\n", 2};
@@ -403,6 +419,13 @@ int r_send_third_party_reg(r_third_party_registration *r, int expires)
 	if(r->cv.len) {
 		h.len += p_charging_vector_s.len + p_charging_vector_e.len + r->cv.len;
 	}
+
+	/*If User Agent is present then include that but use PANI value for now*/
+	if(r->user_agent.len) {
+		h.len += user_agent_hdr_s.len + user_agent_hdr_e.len + + r->user_agent.len;
+	}else{
+		LM_DBG("User Agent has no length - Not including");
+	}
 	if(r->path.len) {
 		h.len += path_s.len + path_e.len + r->path.len
 				 + 6 /*',' and ';lr' and '<' and '>'*/
@@ -417,14 +440,17 @@ int r_send_third_party_reg(r_third_party_registration *r, int expires)
 	}
 
 	if(r->body.content_type == CT_SERVICE_INFO) {
+		LM_DBG("Content type is CT_SERVICE_INFO");
 		h.len += content_type_s.len;
 		h.len += ct_service_info.len;
 		h.len += content_type_e.len;
 	} else if(r->body.content_type == CT_REGISTER_REQ) {
+		LM_DBG("Content type is CT_REGISTER_REQ");
 		h.len += content_type_s.len;
 		h.len += ct_register_req.len;
 		h.len += content_type_e.len;
 	} else if(r->body.content_type == CT_REGISTER_RESP) {
+		LM_DBG("Content type is CT_REGISTER_RESP");
 		h.len += content_type_s.len;
 		h.len += ct_register_resp.len;
 		h.len += content_type_e.len;
@@ -472,6 +498,16 @@ int r_send_third_party_reg(r_third_party_registration *r, int expires)
 		STR_APPEND(h, r->pani);
 		STR_APPEND(h, p_access_network_info_e);
 	}
+
+	if(r->user_agent.len){
+		LM_DBG("Including User Agent Header");
+		STR_APPEND(h, user_agent_hdr_s);
+		STR_APPEND(h, r->user_agent);
+		STR_APPEND(h, user_agent_hdr_e);
+	}else{
+		LM_DBG("Not including User Agent as no Length");
+	}
+	
 
 	if(r->cv.len) {
 		STR_APPEND(h, p_charging_vector_s);
@@ -535,6 +571,8 @@ int r_send_third_party_reg(r_third_party_registration *r, int expires)
 			STR_APPEND(h, ct_register_resp);
 			STR_APPEND(h, content_type_e);
 		}
+	} else {
+		LM_DBG("No Body Type for 3rd Party Register");
 	}
 
 	set_uac_req(&req, &method, &h, &b, 0,

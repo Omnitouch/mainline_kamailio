@@ -424,6 +424,11 @@ static inline isc_match *isc_new_match(ims_filter_criteria *fc, int index)
 		return 0;
 	}
 	memset(r, 0, sizeof(isc_match));
+
+	// Debug print for filter criteria index
+	LM_DBG("Creating new match for filter criteria index: %d\n", index);
+
+	// Copy server name if it exists
 	if(fc->application_server.server_name.len) {
 		r->server_name.s = pkg_malloc(fc->application_server.server_name.len);
 		if(!r->server_name.s) {
@@ -435,8 +440,16 @@ static inline isc_match *isc_new_match(ims_filter_criteria *fc, int index)
 		r->server_name.len = fc->application_server.server_name.len;
 		memcpy(r->server_name.s, fc->application_server.server_name.s,
 				fc->application_server.server_name.len);
+		LM_DBG("Server Name: %.*s\n", r->server_name.len, r->server_name.s);
+	} else {
+		LM_DBG("No Server Name provided in filter criteria\n");
 	}
+
+	// Set default handling
 	r->default_handling = fc->application_server.default_handling;
+	LM_DBG("Default Handling: %d\n", r->default_handling);
+
+	// Copy service info if it exists
 	if(fc->application_server.service_info.len) {
 		r->service_info.s = pkg_malloc(fc->application_server.service_info.len);
 		if(!r->service_info.s) {
@@ -451,12 +464,26 @@ static inline isc_match *isc_new_match(ims_filter_criteria *fc, int index)
 		r->service_info.len = fc->application_server.service_info.len;
 		memcpy(r->service_info.s, fc->application_server.service_info.s,
 				fc->application_server.service_info.len);
+		LM_DBG("Service Info: %.*s\n", r->service_info.len, r->service_info.s);
+	} else {
+		LM_DBG("No Service Info provided in filter criteria\n");
 	}
+	// Set index
 	r->index = index;
+	LM_DBG("Match Index: %d\n", r->index);
+
+	// Set include_register_request and include_register_response flags
 	r->include_register_request =
 			fc->application_server.include_register_request;
+
 	r->include_register_response =
 			fc->application_server.include_register_response;
+
+	// Debug prints for include_register_request and include_register_response
+	LM_DBG("include_register_request is %s\n",
+		   r->include_register_request ? "SET (true)" : "NOT SET (false)");
+	LM_DBG("include_register_response is %s\n",
+		   r->include_register_response ? "SET (true)" : "NOT SET (false)");
 	return r;
 }
 
@@ -488,12 +515,16 @@ isc_match *isc_checker_find(str uri, char direction, int skip,
 		LM_DBG("isc_checker_find: resuming search from %d\n", skip);
 
 	expires = cscf_get_expires(msg);
-	if(!registered)
+	if(!registered){
 		registration_type = IFC_INITIAL_REGISTRATION;
-	else if(expires > 0)
+		LM_DBG("isc_checker_find: IFC_INITIAL_REGISTRATION\n");
+	}else if(expires > 0){
 		registration_type = IFC_RE_REGISTRATION;
-	else
+		LM_DBG("isc_checker_find: IFC_RE_REGISTRATION\n");
+	}else{
 		registration_type = IFC_DE_REGISTRATION;
+		LM_DBG("isc_checker_find: IFC_DE_REGISTRATION\n");
+	}
 
 	isc_ulb.lock_udomain(d, &uri);
 
@@ -598,7 +629,18 @@ isc_match *isc_checker_find(str uri, char direction, int skip,
 							fc->application_server.service_info.len,
 							fc->application_server.service_info.s,
 							fc->application_server.default_handling);
+
+					// Debug log to verify include_register_request flag
+					LM_DBG("isc_checker_find: include_register_request = %d\n",
+						fc->application_server.include_register_request);
+
 					r = isc_new_match(fc, cnt);
+
+					// Debug log to verify include_register_request in isc_match
+					if (r) {
+						LM_DBG("isc_checker_find: isc_match->include_register_request = %d\n",
+							r->include_register_request);
+					}
 
 					//need to free the record somewhere
 					//isc_ulb.release_urecord(p);

@@ -229,36 +229,42 @@ static inline void space_trim_dup(str *dest, char *src)
 }
 
 /**
- *      Parse an Application Server Extension.
+ * Parse an Application Server Extension.
  * @param doc - the XML document
  * @param node - the current node
  * @param as - structure to fill
  * @returns 1 on success, 0 on failure
  */
 static int parse_application_server_extension(
-		xmlDocPtr doc, xmlNodePtr node, ims_application_server *as)
+    xmlDocPtr doc, xmlNodePtr node, ims_application_server *as)
 {
-	xmlNodePtr child;
+    xmlNodePtr child;
 
-	for(child = node->children; child; child = child->next)
-		if(child->type == XML_ELEMENT_NODE)
-			switch(child->name[0]) {
-				case 'I':
-				case 'i': { //IncludeRegisterRequest / IncludeRegisterResponse
-					switch(child->name[17]) {
-						case 'Q':
-						case 'q': //IncludeRegisterRequest
-							as->include_register_request = 1;
-							break;
-						case 'S':
-						case 's': //IncludeRegisterResponse
-							as->include_register_response = 1;
-							break;
-					}
-					break;
-				}
-			}
-	return 1;
+    for (child = node->children; child; child = child->next) {
+        if (child->type == XML_ELEMENT_NODE) {
+            // Debug log to show the name of the element being evaluated
+            LM_DBG("Evaluating element: %s in Extension\n", child->name);
+
+            if (strcasecmp((char *)child->name, "IncludeRegisterRequest") == 0) {
+                as->include_register_request = 1;
+                LM_DBG("include_register_request is SET to 1 (true) for Application Server\n");
+            } else if (strcasecmp((char *)child->name, "IncludeRegisterResponse") == 0) {
+                as->include_register_response = 1;
+                LM_DBG("include_register_response is SET to 1 (true) for Application Server\n");
+            } else {
+                LM_DBG("Unknown element in Application Server Extension: %s\n", child->name);
+            }
+        }
+    }
+
+    if (!as->include_register_request) {
+        LM_DBG("include_register_request is NOT SET (false) for Application Server\n");
+    }
+	if (!as->include_register_response) {
+		LM_DBG("include_register_response is NOT SET (false) for Application Server\n");
+	}
+
+    return 1;
 }
 
 /**

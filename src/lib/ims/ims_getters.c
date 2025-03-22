@@ -1879,3 +1879,42 @@ str cscf_get_public_identity_from_called_party_id(
 	}
 	return id;
 }
+/**
+ * Returns the User-Agent header value.
+ * @param msg - the SIP message
+ * @returns the User-Agent header value as a str, or an empty str if not found
+ */
+str cscf_get_user_agent(struct sip_msg *msg) {
+    str user_agent = {0, 0};  // Initialize an empty str
+
+    if (!msg) {
+        LM_ERR("cscf_get_user_agent: NULL message passed\n");
+        return user_agent;
+    }
+
+    // Parse headers up to the end of the headers (EOH)
+    if (parse_headers(msg, HDR_EOH_F, 0) != 0) {
+        LM_ERR("cscf_get_user_agent: Error parsing headers\n");
+        return user_agent;
+    }
+
+    // Iterate through the headers to find the User-Agent header
+    struct hdr_field *hdr = msg->headers;
+    while (hdr) {
+        if (hdr->name.len == 10 && strncasecmp(hdr->name.s, "User-Agent", 10) == 0) {
+            // Found the User-Agent header
+            user_agent = hdr->body;
+
+            // Log the User-Agent header value using LM_DBG
+            LM_DBG("User-Agent found: %.*s\n", user_agent.len, user_agent.s);
+            break;
+        }
+        hdr = hdr->next;
+    }
+
+    if (!user_agent.len) {
+        LM_DBG("cscf_get_user_agent: User-Agent header not found\n");
+    }
+
+    return user_agent;
+}
