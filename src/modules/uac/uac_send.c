@@ -45,6 +45,8 @@
 #include "uac_send.h"
 #include "uac_reg.h"
 
+#include <ctype.h>  // For isxdigit()
+
 #define UAC_SEND_FL_HA1 (1 << 0)
 
 #define MAX_UACH_SIZE 2048
@@ -56,36 +58,56 @@ static struct tm_binds _uac_send_tmb = {0};
 
 typedef struct _uac_send_info
 {
-	unsigned int flags;
-	char b_method[32];
-	str s_method;
-	char b_ruri[MAX_URI_SIZE];
-	str s_ruri;
-	char b_turi[MAX_URI_SIZE];
-	str s_turi;
-	char b_furi[MAX_URI_SIZE];
-	str s_furi;
-	char b_callid[128];
-	str s_callid;
-	char b_hdrs[MAX_UACH_SIZE];
-	str s_hdrs;
-	char b_body[MAX_UACB_SIZE];
-	str s_body;
-	char b_ouri[MAX_URI_SIZE];
-	str s_ouri;
-	char b_sock[MAX_URI_SIZE];
-	str s_sock;
-	char b_auser[128];
-	str s_auser;
-	char b_apasswd[64];
-	str s_apasswd;
-	char b_evparam[MAX_UACD_SIZE];
-	str s_evparam;
-	unsigned int cseqno;
-	unsigned int evroute;
-	unsigned int evcode;
-	unsigned int evtype;
+    unsigned int flags;
+    char b_method[32];
+    str s_method;
+    char b_ruri[MAX_URI_SIZE];
+    str s_ruri;
+    char b_turi[MAX_URI_SIZE];
+    str s_turi;
+    char b_furi[MAX_URI_SIZE];
+    str s_furi;
+    char b_callid[128];
+    str s_callid;
+    char b_hdrs[MAX_UACH_SIZE];
+    str s_hdrs;
+    char b_body[MAX_UACB_SIZE];
+    str s_body;
+    char b_hex_body[MAX_UACB_SIZE];  // Hex string input
+    str s_hex_body;                  // Hex string input
+    char b_raw_body[MAX_UACB_SIZE];  // Raw binary data (decoded from hex)
+    str s_raw_body;                  // Raw binary data (decoded from hex)
+    char b_ouri[MAX_URI_SIZE];
+    str s_ouri;
+    char b_sock[MAX_URI_SIZE];
+    str s_sock;
+    char b_auser[128];
+    str s_auser;
+    char b_apasswd[64];
+    str s_apasswd;
+    char b_evparam[MAX_UACD_SIZE];
+    str s_evparam;
+    unsigned int cseqno;
+    unsigned int evroute;
+    unsigned int evcode;
+    unsigned int evtype;
 } uac_send_info_t;
+
+static int hex_decode(const char *hex, unsigned char *binary, int max_len) {
+    int i, j = 0;
+    unsigned char byte;
+
+    for (i = 0; hex[i] && hex[i + 1] && j < max_len; i += 2) {
+        if (!isxdigit(hex[i]) || !isxdigit(hex[i + 1])) {
+            LM_ERR("Invalid hex character in hex_body\n");
+            return -1;
+        }
+        byte = (hex[i] % 32 + 9) % 25 * 16 + (hex[i + 1] % 32 + 9) % 25;
+        binary[j++] = byte;
+    }
+
+    return j;  // Return the length of the decoded binary data
+}
 
 static struct _uac_send_info _uac_req;
 
@@ -93,19 +115,21 @@ extern str uac_event_callback;
 
 void uac_send_info_copy(uac_send_info_t *src, uac_send_info_t *dst)
 {
-	memcpy(dst, src, sizeof(uac_send_info_t));
-	dst->s_method.s = dst->b_method;
-	dst->s_ruri.s = dst->b_ruri;
-	dst->s_turi.s = dst->b_turi;
-	dst->s_furi.s = dst->b_furi;
-	dst->s_hdrs.s = dst->b_hdrs;
-	dst->s_body.s = dst->b_body;
-	dst->s_ouri.s = dst->b_ouri;
-	dst->s_auser.s = dst->b_auser;
-	dst->s_apasswd.s = dst->b_apasswd;
-	dst->s_callid.s = dst->b_callid;
-	dst->s_sock.s = dst->b_sock;
-	dst->s_evparam.s = dst->b_evparam;
+    memcpy(dst, src, sizeof(uac_send_info_t));
+    dst->s_method.s = dst->b_method;
+    dst->s_ruri.s = dst->b_ruri;
+    dst->s_turi.s = dst->b_turi;
+    dst->s_furi.s = dst->b_furi;
+    dst->s_hdrs.s = dst->b_hdrs;
+    dst->s_body.s = dst->b_body;
+    dst->s_hex_body.s = dst->b_hex_body;
+    dst->s_raw_body.s = dst->b_raw_body;  // Copy raw_body
+    dst->s_ouri.s = dst->b_ouri;
+    dst->s_auser.s = dst->b_auser;
+    dst->s_apasswd.s = dst->b_apasswd;
+    dst->s_callid.s = dst->b_callid;
+    dst->s_sock.s = dst->b_sock;
+    dst->s_evparam.s = dst->b_evparam;
 }
 
 uac_send_info_t *uac_send_info_clone(uac_send_info_t *ur)
@@ -187,6 +211,10 @@ int pv_get_uac_req(struct sip_msg *msg, pv_param_t *param, pv_value_t *res)
 			return pv_get_uintval(msg, param, res, _uac_req.flags);
 		case 18:
 			return pv_get_uintval(msg, param, res, _uac_req.cseqno);
+		case 19:  // New case for hex_body
+            if(_uac_req.s_hex_body.len <= 0)
+                return pv_get_null(msg, param, res);
+            return pv_get_strval(msg, param, res, &_uac_req.s_hex_body);
 		default:
 			return pv_get_uintval(msg, param, res, _uac_req.flags);
 	}
@@ -484,6 +512,23 @@ int pv_set_uac_req(
 			}
 			_uac_req.cseqno = tval->ri;
 			break;
+		case 19:  // New case for hex_body
+            if(tval == NULL) {
+                _uac_req.s_hex_body.len = 0;
+                return 0;
+            }
+            if(!(tval->flags & PV_VAL_STR)) {
+                LM_ERR("Invalid value type\n");
+                return -1;
+            }
+            if(tval->rs.len >= MAX_UACB_SIZE) {
+                LM_ERR("Value size too big\n");
+                return -1;
+            }
+            memcpy(_uac_req.s_hex_body.s, tval->rs.s, tval->rs.len);
+            _uac_req.s_hex_body.s[tval->rs.len] = '\0';
+            _uac_req.s_hex_body.len = tval->rs.len;
+            break;
 	}
 	return 0;
 }
@@ -550,6 +595,12 @@ int pv_parse_uac_req_name(pv_spec_p sp, str *in)
 			else
 				goto error;
 			break;
+		case 8:
+            if(strncmp(in->s, "hex_body", 8) == 0)
+                sp->pvp.pvn.u.isname.name.n = 19;
+            else
+                goto error;
+            break;
 		default:
 			goto error;
 	}
@@ -565,26 +616,28 @@ error:
 
 void uac_req_init(void)
 {
-	/* load the TM API */
-	if(load_tm_api(&_uac_send_tmb) != 0) {
-		LM_DBG("can't load TM API - disable it\n");
-		memset(&_uac_send_tmb, 0, sizeof(struct tm_binds));
-		return;
-	}
-	memset(&_uac_req, 0, sizeof(struct _uac_send_info));
-	_uac_req.s_ruri.s = _uac_req.b_ruri;
-	_uac_req.s_furi.s = _uac_req.b_furi;
-	_uac_req.s_turi.s = _uac_req.b_turi;
-	_uac_req.s_ouri.s = _uac_req.b_ouri;
-	_uac_req.s_hdrs.s = _uac_req.b_hdrs;
-	_uac_req.s_body.s = _uac_req.b_body;
-	_uac_req.s_method.s = _uac_req.b_method;
-	_uac_req.s_auser.s = _uac_req.b_auser;
-	_uac_req.s_apasswd.s = _uac_req.b_apasswd;
-	_uac_req.s_callid.s = _uac_req.b_callid;
-	_uac_req.s_sock.s = _uac_req.b_sock;
-	_uac_req.s_evparam.s = _uac_req.b_evparam;
-	return;
+    /* load the TM API */
+    if(load_tm_api(&_uac_send_tmb) != 0) {
+        LM_DBG("can't load TM API - disable it\n");
+        memset(&_uac_send_tmb, 0, sizeof(struct tm_binds));
+        return;
+    }
+    memset(&_uac_req, 0, sizeof(struct _uac_send_info));
+    _uac_req.s_ruri.s = _uac_req.b_ruri;
+    _uac_req.s_furi.s = _uac_req.b_furi;
+    _uac_req.s_turi.s = _uac_req.b_turi;
+    _uac_req.s_ouri.s = _uac_req.b_ouri;
+    _uac_req.s_hdrs.s = _uac_req.b_hdrs;
+    _uac_req.s_body.s = _uac_req.b_body;
+    _uac_req.s_hex_body.s = _uac_req.b_hex_body;
+    _uac_req.s_raw_body.s = _uac_req.b_raw_body;  // Initialize raw_body
+    _uac_req.s_method.s = _uac_req.b_method;
+    _uac_req.s_auser.s = _uac_req.b_auser;
+    _uac_req.s_apasswd.s = _uac_req.b_apasswd;
+    _uac_req.s_callid.s = _uac_req.b_callid;
+    _uac_req.s_sock.s = _uac_req.b_sock;
+    _uac_req.s_evparam.s = _uac_req.b_evparam;
+    return;
 }
 
 int uac_send_tmdlg(dlg_t *tmdlg, sip_msg_t *rpl)
@@ -837,72 +890,81 @@ error:
 
 int uac_req_send(void)
 {
-	int ret;
-	uac_req_t uac_r;
-	uac_send_info_t *tp = NULL;
+    int ret;
+    uac_req_t uac_r;
+    uac_send_info_t *tp = NULL;
 
-	if(_uac_req.s_ruri.len <= 0 || _uac_req.s_method.len == 0
-			|| _uac_send_tmb.t_request == NULL)
-		return -1;
+    if(_uac_req.s_ruri.len <= 0 || _uac_req.s_method.len == 0
+            || _uac_send_tmb.t_request == NULL)
+        return -1;
 
-	memset(&uac_r, '\0', sizeof(uac_r));
-	uac_r.method = &_uac_req.s_method;
-	uac_r.headers = (_uac_req.s_hdrs.len <= 0) ? NULL : &_uac_req.s_hdrs;
-	uac_r.body = (_uac_req.s_body.len <= 0) ? NULL : &_uac_req.s_body;
+    memset(&uac_r, '\0', sizeof(uac_r));
+    uac_r.method = &_uac_req.s_method;
+    uac_r.headers = (_uac_req.s_hdrs.len <= 0) ? NULL : &_uac_req.s_hdrs;
 
-	if(_uac_req.s_sock.s != NULL && _uac_req.s_sock.len > 0) {
-		uac_r.ssock = &_uac_req.s_sock;
-	} else if(uac_default_socket.s != NULL && uac_default_socket.len > 0) {
-		uac_r.ssock = &uac_default_socket;
-	}
+    // Decode hex_body into raw binary data if provided
+    if (_uac_req.s_hex_body.len > 0) {
+        int raw_len = hex_decode(_uac_req.s_hex_body.s, (unsigned char *)_uac_req.b_raw_body, MAX_UACB_SIZE);
+        if (raw_len < 0) {
+            LM_ERR("Failed to decode hex_body\n");
+            return -1;
+        }
+        _uac_req.s_raw_body.s = _uac_req.b_raw_body;
+        _uac_req.s_raw_body.len = raw_len;
+        uac_r.body = &_uac_req.s_raw_body;  // Use the decoded raw binary data
+    } else {
+        uac_r.body = (_uac_req.s_body.len <= 0) ? NULL : &_uac_req.s_body;
+    }
 
-	if((_uac_req.s_auser.len > 0 && _uac_req.s_apasswd.len > 0)
-			|| (_uac_req.evroute > 0)) {
-		tp = uac_send_info_clone(&_uac_req);
-		if(tp == NULL) {
-			LM_ERR("cannot clone the uac structure\n");
-			return -1;
-		}
+    if(_uac_req.s_sock.s != NULL && _uac_req.s_sock.len > 0) {
+        uac_r.ssock = &_uac_req.s_sock;
+    } else if(uac_default_socket.s != NULL && uac_default_socket.len > 0) {
+        uac_r.ssock = &uac_default_socket;
+    }
 
-		switch(_uac_req.evroute) {
+    if((_uac_req.s_auser.len > 0 && _uac_req.s_apasswd.len > 0)
+            || (_uac_req.evroute > 0)) {
+        tp = uac_send_info_clone(&_uac_req);
+        if(tp == NULL) {
+            LM_ERR("cannot clone the uac structure\n");
+            return -1;
+        }
 
-			case 2:
-				uac_r.cb_flags = TMCB_ON_FAILURE | TMCB_DESTROY;
-				/* Callback function */
-				uac_r.cb = uac_resend_tm_callback;
-				break;
-			case 1:
-			default:
-				uac_r.cb_flags = TMCB_LOCAL_COMPLETED | TMCB_DESTROY;
-				/* Callback function */
-				uac_r.cb = uac_send_tm_callback;
-				break;
-		}
-		/* Callback parameter */
-		uac_r.cbp = (void *)tp;
-	}
-	uac_r.callid = (_uac_req.s_callid.len <= 0) ? NULL : &_uac_req.s_callid;
-	uac_r.cseqno = _uac_req.cseqno;
-	ret = _uac_send_tmb.t_request(&uac_r, /* UAC Req */
-			&_uac_req.s_ruri,			  /* Request-URI */
-			(_uac_req.s_turi.len <= 0) ? &_uac_req.s_ruri
-									   : &_uac_req.s_turi, /* To */
-			(_uac_req.s_furi.len <= 0) ? &_uac_req.s_ruri
-									   : &_uac_req.s_furi, /* From */
-			(_uac_req.s_ouri.len <= 0) ? NULL
-									   : &_uac_req.s_ouri /* outbound uri */
-	);
+        switch(_uac_req.evroute) {
+            case 2:
+                uac_r.cb_flags = TMCB_ON_FAILURE | TMCB_DESTROY;
+                uac_r.cb = uac_resend_tm_callback;
+                break;
+            case 1:
+            default:
+                uac_r.cb_flags = TMCB_LOCAL_COMPLETED | TMCB_DESTROY;
+                uac_r.cb = uac_send_tm_callback;
+                break;
+        }
+        uac_r.cbp = (void *)tp;
+    }
+    uac_r.callid = (_uac_req.s_callid.len <= 0) ? NULL : &_uac_req.s_callid;
+    uac_r.cseqno = _uac_req.cseqno;
+    ret = _uac_send_tmb.t_request(&uac_r, /* UAC Req */
+            &_uac_req.s_ruri,                /* Request-URI */
+            (_uac_req.s_turi.len <= 0) ? &_uac_req.s_ruri
+                                     : &_uac_req.s_turi, /* To */
+            (_uac_req.s_furi.len <= 0) ? &_uac_req.s_ruri
+                                     : &_uac_req.s_furi, /* From */
+            (_uac_req.s_ouri.len <= 0) ? NULL
+                                     : &_uac_req.s_ouri /* outbound uri */
+    );
 
-	if(ret < 0) {
-		if(tp != NULL)
-			shm_free(tp);
-		return -1;
-	}
-	if(uac_r.cb_flags & TMCB_LOCAL_REQUEST_DROP) {
-		if(tp != NULL)
-			shm_free(tp);
-	}
-	return 1;
+    if(ret < 0) {
+        if(tp != NULL)
+            shm_free(tp);
+        return -1;
+    }
+    if(uac_r.cb_flags & TMCB_LOCAL_REQUEST_DROP) {
+        if(tp != NULL)
+            shm_free(tp);
+    }
+    return 1;
 }
 
 int w_uac_req_send(struct sip_msg *msg, char *s1, char *s2)
