@@ -169,6 +169,12 @@ int cscf_get_max_expires(struct sip_msg *msg, int is_shm);
  * @param str2 - not used
  * @returns #CSCF_RETURN_TRUE if yes, else #CSCF_RETURN_FALSE
  */
+str cscf_get_user_agent(struct sip_msg *msg);
+/**
+ * Returns the User Agent header value
+ * @param msg - the SIP message, if available
+  * @returns User Agent as String on success 0 on fail
+ */
 int cscf_has_originating(struct sip_msg *msg, char *str1, char *str2);
 /**
  * Looks for the P-Asserted-Identity header and extracts its content

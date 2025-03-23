@@ -94,6 +94,7 @@ typedef struct _r_third_party_reg
 	str cv;		 /* Charging vector 	*/
 	body_t body; /* The body */
 	str path;	 /* Path header  */
+	str user_agent; /*User Agent*/
 } r_third_party_registration;
 
 int isc_third_party_reg(
