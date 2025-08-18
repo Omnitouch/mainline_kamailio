@@ -111,9 +111,10 @@ typedef int (*child_init_function)(int rank);
 #define PARAM_STRING (1U << 0) /**< String (char *) parameter type */
 #define PARAM_INT (1U << 1)	   /**< Integer parameter type */
 #define PARAM_STR (1U << 2)	   /**< struct str parameter type */
-#define PARAM_VAR (1U << 3)	   /**< var parameter type - mdoparamx */
+#define PARAM_VAR (1U << 8)	   /**< var parameter type - mdoparamx */
+#define PARAM_USE_SHM (1U << (8 * sizeof(int) - 2))
 #define PARAM_USE_FUNC (1U << (8 * sizeof(int) - 1))
-#define PARAM_TYPE_MASK(_x) ((_x) & (~PARAM_USE_FUNC))
+#define PARAM_TYPE_MASK(_x) ((_x) & (~(PARAM_USE_FUNC | PARAM_USE_SHM)))
 
 typedef unsigned int modparam_t;
 
@@ -154,7 +155,7 @@ void ksr_module_set_flag(unsigned int flag);
 	-127 /**< special rank, the context is the main kamailio
 							  process, but this is guaranteed to be executed
 							  before any process is forked, so it can be used
-							  to setup shared variables that depend on some
+							  to set up shared variables that depend on some
 							  after mod_init available information (e.g.
 							  total number of processes).
 							  @warning child_init(PROC_MAIN) is again called
@@ -310,7 +311,7 @@ typedef struct module_exports
 } module_exports_t;
 
 
-/** kamailio module exports version coverted for core operations */
+/** kamailio module exports version converted for core operations */
 typedef struct ksr_module_exports
 {
 	/**< null terminated module name */
@@ -345,9 +346,8 @@ typedef struct sr_module
 } sr_module_t;
 
 
-extern sr_module_t *modules;				 /**< global module list*/
 extern response_function *mod_response_cbks; /**< response callback array */
-extern int mod_response_cbk_no; /**< size of reponse callbacks array */
+extern int mod_response_cbk_no; /**< size of response callbacks array */
 
 int register_builtin_modules(void);
 int ksr_load_module(char *path, char *opts);

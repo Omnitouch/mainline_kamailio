@@ -145,9 +145,7 @@ set(MOD_LIST_DB
 )
 
 # * common modules depending on database, using UID db schema
-set(MOD_LIST_DBUID db2_ops uid_auth_db uid_avp_db uid_domain uid_gflags
-                   uid_uri_db
-)
+set(MOD_LIST_DBUID db2_ops uid_auth_db uid_avp_db uid_domain uid_gflags uid_uri_db)
 
 # * modules for devel purposes
 set(MOD_LIST_DEVEL misctest)
@@ -170,11 +168,8 @@ set(MOD_LIST_POSTGRES db_postgres)
 # * modules depending on unixodbc library
 set(MOD_LIST_UNIXODBC db_unixodbc)
 
-# * modules depending on mysql cassandra library
-set(MOD_LIST_CASSANDRA db_cassandra ndb_cassandra)
-
 # * modules depending on xml2 library
-set(MOD_LIST_CPLC cplc)
+set(MOD_LIST_CPL cplc)
 
 # * modules depending on xml2 library
 set(MOD_LIST_XMLDEPS xhttp_pi xmlrpc xmlops)
@@ -288,9 +283,6 @@ set(MOD_LIST_JANSSON_EVENT janssonrpcc)
 # * modules depending on redis library
 set(MOD_LIST_REDIS db_redis ndb_redis topos_redis)
 
-# * modules depending on mono library
-set(MOD_LIST_MONO app_mono)
-
 # * modules related to IMS extensions
 set(MOD_LIST_IMS
     cdp
@@ -309,9 +301,6 @@ set(MOD_LIST_IMS
     ims_diameter_server
     ims_ipsec_pcscf
 )
-
-# * modules depending on osp toolkit library
-set(MOD_LIST_OSP osp)
 
 # * modules depending on java library
 set(MOD_LIST_JAVA app_java)
@@ -400,7 +389,7 @@ set(MOD_LIST_ALL
     ${MOD_LIST_UNIXODBC}
     ${MOD_LIST_XMLDEPS}
     ${MOD_LIST_PERLDEPS}
-    ${MOD_LIST_CPLC}
+    ${MOD_LIST_CPL}
     ${MOD_LIST_XMPP}
     ${MOD_LIST_BERKELEY}
     ${MOD_LIST_UTILS}
@@ -418,12 +407,9 @@ set(MOD_LIST_ALL
     ${MOD_LIST_JSON}
     ${MOD_LIST_JSON_EVENT}
     ${MOD_LIST_REDIS}
-    ${MOD_LIST_MONO}
     ${MOD_LIST_IMS}
-    ${MOD_LIST_CASSANDRA}
     ${MOD_LIST_ORACLE}
     ${MOD_LIST_OUTBOUND}
-    ${MOD_LIST_OSP}
     ${MOD_LIST_JAVA}
     ${MOD_LIST_DNSSEC}
     ${MOD_LIST_SCTP}
@@ -472,17 +458,15 @@ list(SORT MOD_LIST_ALL)
 # compile or link dependencies
 set(MODULE_GROUP_ALL ${MOD_LIST_ALL})
 
-set(MODULE_GROUP_DEFAULT ${MOD_LIST_BASIC} ${MOD_LIST_EXTRA} ${MOD_LIST_DB}
-                         ${MOD_LIST_DBUID} ${MOD_LIST_DEVEL} ${MOD_LIST_JSDT}
+set(MODULE_GROUP_DEFAULT ${MOD_LIST_BASIC} ${MOD_LIST_EXTRA} ${MOD_LIST_DB} ${MOD_LIST_DBUID}
+                         ${MOD_LIST_DEVEL} ${MOD_LIST_JSDT}
 )
 
 # Modules in this group are the default compiled modules due to no
 # internal/external compile or link dependencies
 # module_group_standard=$(mod_list_basic) $(mod_list_extra) \ $(mod_list_devel)
 # $(mod_list_jsdt)
-set(MODULE_GROUP_STANDARD ${MOD_LIST_BASIC} ${MOD_LIST_EXTRA} ${MOD_LIST_DEVEL}
-                          ${MOD_LIST_JSDT}
-)
+set(MODULE_GROUP_STANDARD ${MOD_LIST_BASIC} ${MOD_LIST_EXTRA} ${MOD_LIST_DEVEL} ${MOD_LIST_JSDT})
 
 # Modules in this group are considered a standard part due to widespread usage,
 # but they have dependencies that must be satisfied for compilation (e.g., lcr,
@@ -499,49 +483,18 @@ set(MODULE_GROUP_COMMON
     ${MOD_LIST_TLSDEPS}
 )
 
-# For db use (db modules, excluding drivers) module_group_db=$(mod_list_db)
-set(MODULE_GROUP_DB ${MOD_LIST_DB})
-
-# For mysql module_group_mysql_driver=$(mod_list_mysql)
-# module_group_mysql=$(module_group_mysql_driver) $(module_group_db)
-set(MODULE_GROUP_MYSQL_DRIVER ${MOD_LIST_MYSQL})
-set(MODULE_GROUP_MYSQL ${MODULE_GROUP_MYSQL_DRIVER} ${MODULE_GROUP_DB})
-
-# For postgress module_group_postgres_driver=$(mod_list_postgres)
-# module_group_postgres=$(module_group_postgres_driver) $(module_group_db)
-set(MODULE_GROUP_POSTGRES_DRIVER ${MOD_LIST_POSTGRES})
-set(MODULE_GROUP_POSTGRES ${MODULE_GROUP_POSTGRES_DRIVER} ${MODULE_GROUP_DB})
-
-# For sqlite module_group_sqlite_driver=$(mod_list_sqlite)
-# module_group_sqlite=$(module_group_sqlite_driver) $(module_group_db)
-set(MODULE_GROUP_SQLITE_DRIVER ${MOD_LIST_SQLITE})
-set(MODULE_GROUP_SQLITE ${MODULE_GROUP_SQLITE_DRIVER} ${MODULE_GROUP_DB})
-
-# For radius
-set(MODULE_GROUP_RADIUS ${MODULE_LIST_RADIUS})
-
-# For presence kamailio modules
-set(MODULE_GROUP_PRESENCE ${MOD_LIST_PRESENCE})
-
-# For cassandra
-set(MODULE_GROUP_CASSANDRA_DRIVER ${MODULE_LIST_CASSANDRA})
-set(MODULE_GROUP_CASSANDRA ${MODULE_GROUP_CASSANDRA_DRIVER} ${MODULE_GROUP_DB})
-
-# For all modules not compiled by default
-# list(FILTER MOD_LIST_ALL EXCLUDE REGEX "${MODULE_GROUP_DEFAULT}")
-
 # for all protocols (excl. local ones such as unix, tcp, etc.)
 set(AVAILABLE_GROUPS ALL DEFAULT STANDARD COMMON)
 
 # --- Groups defined for pacKaging ###
 # Standard modules in main pkg
-set(MODULE_GROUP_KSTANDARD ${MOD_LIST_BASIC} ${MOD_LIST_EXTRA} ${MOD_LIST_DB}
-                           ${MOD_LIST_DBUID} ${MOD_LIST_PCRE} ${MOD_LIST_JSDT}
+set(MODULE_GROUP_KSTANDARD ${MOD_LIST_BASIC} ${MOD_LIST_EXTRA} ${MOD_LIST_DB} ${MOD_LIST_DBUID}
+                           ${MOD_LIST_PCRE} ${MOD_LIST_JSDT}
 )
 
 # Standard modules without any dependencies (such as pcre)
-set(MODULE_GROUP_KMINI ${MOD_LIST_BASIC} ${MOD_LIST_EXTRA} ${MOD_LIST_DB}
-                       ${MOD_LIST_DBUID} ${MOD_LIST_JSDT}
+set(MODULE_GROUP_KMINI ${MOD_LIST_BASIC} ${MOD_LIST_EXTRA} ${MOD_LIST_DB} ${MOD_LIST_DBUID}
+                       ${MOD_LIST_JSDT}
 )
 # pkg pcre module
 set(MODULE_GROUP_KPCRE ${MOD_LIST_PCRE})
@@ -734,88 +687,110 @@ set(MODULE_GROUP_KRTP_MEDIA_SERVER ${MOD_LIST_RTP_MEDIA_SERVER})
 # list of static modules
 set(STATIC_MODULES "")
 
-list(
-  APPEND
-  AVAILABLE_GROUPS
-  KSTANDARD
-  KMINI
-  KPCRE
-  KMYSQL
-  KPOSTGRES
-  KCPL
-  KXML
-  KRAIDUS
-  KUNIXODBC
-  KPERL
-  KSNMPSTATS
-  KXMPP
-  KBERKELEY
-  KLDAP
-  KUTILS
-  KHTTP_ASYNC
-  KMEMCACHED
-  KTLS_BASIC
-  KTLS
-  KTLS_WOLFSSL
-  KWEBSOCKET
-  KPRESENCE
-  KLUA
-  KPYTHON
-  KPYTHON3
-  KRUBY
-  KGEOIP
-  KGEOIP2
-  KSQLITE
-  KJSON_BASIC
-  KJSON
-  KJANSSON_BASIC
-  KJANSSON
-  KREDIS
-  KIMS
-  KOUTBOUND
-  KJAVA
-  KDNSSEC
-  KSCTP
-  KAUTHEPH
-  KGZCOMPRESS
-  KUUID
-  KEV
-  KJWT
-  KLWSC
-  KSTIRSHAKEN
-  KKAZOO
-  KMONGODB
-  KCNXCC
-  KERLANG
-  KSYSTEMD
-  KNSQ
-  KRABBITMQ
-  KPHONENUM
-  KKAFKA
-  KMQTT
-  KNATS
-  KRUXC
-  KMICROHTTPD
-  KNGHTTP2
-  KGCRYPT
-  KSECSIPID
-  KRT_MEDIA_SERVER
+set(MODULE_GROUP_PACKAGE_GROUPS
+    KSTANDARD
+    KPCRE
+    KMYSQL
+    KPOSTGRES
+    KCPL
+    KXML
+    KRADIUS
+    KUNIXODBC
+    KPERL
+    KSNMPSTATS
+    KXMPP
+    KBERKELEY
+    KLDAP
+    KUTILS
+    KHTTP_ASYNC
+    KMEMCACHED
+    KTLS_BASIC
+    KTLS
+    KTLS_WOLFSSL
+    KWEBSOCKET
+    KPRESENCE
+    KLUA
+    KPYTHON
+    KPYTHON3
+    KRUBY
+    KGEOIP
+    KGEOIP2
+    KSQLITE
+    KJSON_BASIC
+    KJSON
+    KJANSSON_BASIC
+    KJANSSON
+    KREDIS
+    KIMS
+    KOUTBOUND
+    KJAVA
+    KDNSSEC
+    KSCTP
+    KAUTHEPH
+    KGZCOMPRESS
+    KUUID
+    KEV
+    KJWT
+    KLWSC
+    KSTIRSHAKEN
+    KKAZOO
+    KMONGODB
+    KCNXCC
+    KERLANG
+    KSYSTEMD
+    KNSQ
+    KRABBITMQ
+    KPHONENUM
+    KKAFKA
+    KMQTT
+    KNATS
+    KRUXC
+    KMICROHTTPD
+    KNGHTTP2
+    KGCRYPT
+    KSECSIPID
+    KRTP_MEDIA_SERVER
 )
 
-# # Option to allow the user to define which group to build
-# set(SELECTED_PACKAGE_GROUP
-#     ""
-#     CACHE STRING "Select the package group to build from"
-#     PARENT_SCOPE
-# )
-# set_property(CACHE SELECTED_PACKAGE_GROUP PROPERTY STRINGS ${PACKAGE_GROUPS})
+# Add group names to available group and provide "ALL_PACKAGED" as well
+# for easier packaging using components
+list(APPEND AVAILABLE_GROUPS ALL_PACKAGED KMINI ${MODULE_GROUP_PACKAGE_GROUPS})
 
-# # Ensure the selected group is valid
-# if(NOT SELECTED_PACKAGE_GROUP IN_LIST PACKAGE_GROUPS)
-#   message(
-#     FATAL_ERROR
-#       "Invalid package group selected: ${SELECTED_PACKAGE_GROUP}. Please choose from: ${PACKAGE_GROUPS}."
-#   )
-# endif()
-
-# message(STATUS "Building package group: ${SELECTED_PACKAGE_GROUP}")
+# Find the group name for the target by checking if the module is in the
+# list of modules to be built and if so, use the group name of that module
+# group_name can be used afterwards.
+function(find_group_name module)
+  set(group_name
+      ""
+      PARENT_SCOPE
+  )
+  separate_arguments(groups_to_search_in UNIX_COMMAND ${MODULE_GROUP_NAME})
+  list(FIND groups_to_search_in "ALL_PACKAGED" group_index)
+  if(group_index GREATER -1)
+    # Remove it from the list and append the package groups
+    list(REMOVE_AT groups_to_search_in ${group_index})
+    list(APPEND groups_to_search_in ${MODULE_GROUP_PACKAGE_GROUPS})
+  endif()
+  # message(WARNING "Groups provided by the user ${groups_to_search_in}")
+  # message(WARNING "Looking for group for db ${module}")
+  foreach(group IN LISTS groups_to_search_in)
+    get_property(MODULES_IN_GROUP VARIABLE PROPERTY "MODULE_GROUP_${group}")
+    # message(WARNING "Modules in group ${group}: ${MODULES_IN_GROUP}")
+    if("${module}" IN_LIST MODULES_IN_GROUP)
+      # message(WARNING "Found group ${group} for db ${module}")
+      set(group_name
+          "${group}"
+          PARENT_SCOPE
+      )
+      return()
+    endif()
+  endforeach()
+  message(STATUS "module ${module} not found in any group")
+  # if not found in any group, it's probably in include_modules list
+  # Use the group name "user_specified_list" associated with include_modules
+  # list, otherwise it will generate Unknown group component
+  set(group_name
+      "user_specified_list"
+      PARENT_SCOPE
+  )
+endfunction()

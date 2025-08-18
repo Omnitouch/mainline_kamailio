@@ -314,7 +314,7 @@ int extract_candidate(str *body, sdp_stream_cell_t *stream)
 	int len, fl;
 	sdp_ice_attr_t *ice_attr;
 
-	if((body->len < 12) || (strncasecmp(body->s, "a=candidate:", 12) != 0)) {
+	if((body->len <= 12) || (strncasecmp(body->s, "a=candidate:", 12) != 0)) {
 		/*LM_DBG("We are not pointing to an a=candidate: attribute =>`%.*s'\n", body->len, body->s); */
 		return -1;
 	}
@@ -330,8 +330,9 @@ int extract_candidate(str *body, sdp_stream_cell_t *stream)
 
 	fl = space - start;
 
-	start = space + 1;
 	len = len - (space - start + 1);
+	start = space + 1;
+
 	space = memchr(start, 32, len);
 	if(space == NULL) {
 		LM_ERR("no component in `a=candidate'\n");
@@ -413,7 +414,7 @@ int extract_ice_option(str *body, sdp_stream_cell_t *stream)
 		trim_len(ice_opt->option.len, ice_opt->option.s, ice_opt->option);
 
 		length = 0;
-		if(*ptr_src == 32)
+		if(ptr_src < end && *ptr_src == 32)
 			ptr_src++; /* skip space */
 	}
 
@@ -557,7 +558,7 @@ int extract_mediaip(str *body, str *mediaip, int *pf, char *line)
 	 * - for length, at least 6: ' IP[4|6] x...'
 	 * - white space after
 	 */
-	if(cp + 6 > mediaip->s + mediaip->len && cp[4] != ' ') {
+	if(cp + 6 > mediaip->s + mediaip->len || cp[4] != ' ') {
 		LM_ERR("invalid content for `%s' line\n", line);
 		return -1;
 	}
@@ -731,7 +732,12 @@ int extract_sess_version(str *oline, str *sess_version)
 		}
 
 		i++;
-	} while(len < oline->len && i < 3);
+	} while((cp < oline->s + oline->len) && i < 3);
+
+	if(cp == NULL || cp0 == NULL || cp >= oline->s + oline->len) {
+		LM_ERR("broken o= line - version field not found\n");
+		return -1;
+	}
 
 	len = cp - cp0 - 1;
 	LM_DBG("end %d: >%.*s<\n", len, len, cp0);

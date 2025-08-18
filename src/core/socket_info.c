@@ -1378,6 +1378,7 @@ static int nl_bound_sock(void)
 {
 	int sock = -1;
 	struct sockaddr_nl la;
+	struct timeval recvtimeout;
 
 	sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 	if(sock < 0) {
@@ -1393,6 +1394,15 @@ static int nl_bound_sock(void)
 	la.nl_groups = 0;
 	if(bind(sock, (struct sockaddr *)&la, sizeof(la)) < 0) {
 		LM_ERR("could not bind NETLINK sock to sockaddr_nl\n");
+		goto error;
+	}
+
+	recvtimeout.tv_sec = 4;
+	recvtimeout.tv_usec = 0;
+	if(setsockopt(
+			   sock, SOL_SOCKET, SO_RCVTIMEO, &recvtimeout, sizeof(recvtimeout))
+			< 0) {
+		LM_ERR("failed to set receive timeout\n");
 		goto error;
 	}
 
@@ -1429,7 +1439,7 @@ static int get_flags(int family)
 	struct ifinfomsg *ifi;
 	char buf[NETLINK_BUFFER_SIZE];
 	char *p = buf;
-	int nll = 0;
+	unsigned int nll = 0;
 	int nl_sock = -1;
 
 	fill_nl_req(req, RTM_GETLINK, family);
@@ -1443,18 +1453,22 @@ static int get_flags(int family)
 	}
 
 	while(1) {
-		if((sizeof(buf) - nll) == 0) {
-			LM_ERR("netlink buffer overflow in get_flags");
+		rtn = recv(nl_sock, p, sizeof(buf) - nll, 0);
+		if(rtn <= 0) {
+			LM_ERR("failed to receive data (%d/%d)\n", rtn, errno);
 			goto error;
 		}
-		rtn = recv(nl_sock, p, sizeof(buf) - nll, 0);
+		if(nll >= sizeof(buf) - rtn) {
+			LM_ERR("netlink buffer overflow [%u/%d]\n", nll, rtn);
+			goto error;
+		}
 		nlp = (struct nlmsghdr *)p;
 		if(nlp->nlmsg_type == NLMSG_DONE) {
 			LM_DBG("done\n");
 			break;
 		}
 		if(nlp->nlmsg_type == NLMSG_ERROR) {
-			LM_DBG("Error on message to netlink");
+			LM_DBG("error on message to netlink");
 			break;
 		}
 		p += rtn;
@@ -1550,6 +1564,10 @@ static int build_iface_list(void)
 				goto error;
 			}
 			rtn = recv(nl_sock, p, sizeof(buf) - nll, 0);
+			if(rtn <= 0) {
+				LM_ERR("failed to receive data (%d/%d)\n", rtn, errno);
+				goto error;
+			}
 			LM_DBG("received %d byles \n", rtn);
 			nlp = (struct nlmsghdr *)p;
 			if(nlp->nlmsg_type == NLMSG_DONE) {

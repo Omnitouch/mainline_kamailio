@@ -100,6 +100,8 @@ static int goto_on_reply = 0;
 /* where to go on receipt of reply without transaction context */
 int goto_on_sl_reply = 0;
 extern str on_sl_reply_name;
+extern str tm_event_callback;
+extern int _tm_evlreq_mode;
 
 extern str _tm_event_callback_lres_sent;
 
@@ -550,7 +552,15 @@ static int _reply_light(struct cell *trans, char *buf, unsigned int len,
 	 * the chances for this increase a lot.
 	 */
 	if(unlikely(!trans->uas.response.dst.send_sock)) {
-		LM_ERR("no resolved dst to send reply to\n");
+		if(unlikely(is_local(trans))) {
+			LM_DBG("local transaction reply [code: %u, t-flags: %x"
+				   " buf: %.*s ...]\n",
+					code, trans->flags, (len > 256) ? 256 : len, buf);
+		} else {
+			LM_ERR("no resolved dst to send reply to [code: %u, t-flags: %x"
+				   " buf: %.*s ...]\n",
+					code, trans->flags, (len > 256) ? 256 : len, buf);
+		}
 	} else {
 		if(likely(SEND_PR_BUFFER(rb, buf, len) >= 0)) {
 			if(unlikely(code >= 200 && !is_local(trans)
@@ -2370,6 +2380,9 @@ int reply_received(struct sip_msg *p_msg)
 	struct run_act_ctx *bctx;
 	sr_kemi_eng_t *keng = NULL;
 	int ret;
+	int rt, backup_rt;
+	struct sip_msg ack_msg;
+	str evname_lr = str_init("tm:local-request");
 	str evname = str_init("on_sl_reply");
 
 	/* make sure we know the associated transaction ... */
@@ -2452,6 +2465,59 @@ int reply_received(struct sip_msg *p_msg)
 							run_trans_callbacks_off_params(
 									TMCB_REQUEST_SENT, t, &onsend_params);
 						}
+/* trigger tm:local-request event route for negative reply ACK --- */
+#ifdef WITH_EVENT_LOCAL_REQUEST
+						if(_tm_evlreq_mode & TM_EVLREQ_ACK_HBH) {
+							rt = -1;
+							if(tm_event_callback.s == NULL
+									|| tm_event_callback.len <= 0) {
+								rt = route_lookup(&event_rt, evname_lr.s);
+								if(rt < 0 || event_rt.rlist[rt] == NULL) {
+									LM_DBG("tm:local-request not found\n");
+								}
+							} else {
+								keng = sr_kemi_eng_get();
+								if(keng == NULL) {
+									LM_DBG("event callback (%s) set, but no "
+										   "cfg "
+										   "engine\n",
+											tm_event_callback.s);
+								}
+							}
+
+							memset(&ack_msg, 0, sizeof(struct sip_msg));
+
+							if(build_sip_msg_from_buf(&ack_msg, ack, ack_len, 0)
+									< 0) {
+								LM_ERR("failed to build sip msg structure for "
+									   "negative reply ACK event route\n");
+							}
+
+							/* Call event */
+							backup_rt = get_route_type();
+							set_route_type(REQUEST_ROUTE);
+							init_run_actions_ctx(&ctx);
+
+							if(rt >= 0) {
+								LM_DBG("tm:local-request found [%d]\n", rt);
+								run_top_route(event_rt.rlist[rt], &ack_msg, 0);
+							} else {
+								if(keng != NULL) {
+									if(sr_kemi_route(keng, &ack_msg,
+											   EVENT_ROUTE, &tm_event_callback,
+											   &evname_lr)
+											< 0) {
+										LM_ERR("error running event route kemi "
+											   "callback\n");
+									}
+								}
+							}
+							set_route_type(backup_rt);
+							free_sip_msg(&ack_msg);
+						}
+#endif /* WITH_EVENT_LOCAL_REQUEST */
+
+						/* trigger tm:local-request event route for negative reply ACK --- */
 					}
 					shm_free(ack);
 				}
@@ -2765,7 +2831,7 @@ int reply_received(struct sip_msg *p_msg)
 #endif
 		restart_rb_fr(&uac->request, t->fr_inv_timeout);
 		uac->request.flags |= F_RB_FR_INV; /* mark fr_inv */
-	}									   /* provisional replies */
+	} /* provisional replies */
 
 done:
 	if(unlikely(replies_locked)) {
@@ -3119,6 +3185,97 @@ void rpc_reply_callid(rpc_t *rpc, void *c)
 
 	if(n < 0) {
 		rpc->fault(c, 500, "Reply failed");
+		return;
+	}
+}
+
+/*
+ * Syntax:
+ *
+ * ":tm.retransmit_reply:[response file]\n
+ * callid
+ * cseq
+ * \n"
+ */
+void rpc_retransmit_reply_callid(rpc_t *rpc, void *c)
+{
+	int ret;
+	tm_cell_t *trans;
+	tm_cell_t *orig_t = NULL;
+	int orig_branch;
+	str callid = {0, 0};
+	str cseq = {0, 0};
+
+	if(rpc->scan(c, "S", &callid) < 1) {
+		rpc->fault(c, 400, "Call-ID expected");
+		return;
+	}
+
+	if(rpc->scan(c, "S", &cseq) < 1) {
+		rpc->fault(c, 400, "CSeq expected");
+		return;
+	}
+
+	tm_get_tb(&orig_t, &orig_branch);
+	if(t_lookup_callid(&trans, callid, cseq) < 0) {
+		rpc->fault(c, 404, "Transaction not found");
+		return;
+	}
+	/* it is refcounted now */
+	ret = t_retransmit_reply(trans);
+	UNREF(trans);
+	tm_set_tb(orig_t, orig_branch);
+
+	if(ret < 0) {
+		LM_ERR("Reply retransmission failed\n");
+		rpc->fault(c, 500, "Reply retransmission failed");
+		return;
+	}
+}
+
+/*
+ * Syntax:
+ *
+ * ":tm.retransmit_reply:[response file]\n
+ * trans_id\n
+ * \n"
+ */
+void rpc_retransmit_reply(rpc_t *rpc, void *c)
+{
+	int ret;
+	tm_cell_t *trans;
+	tm_cell_t *orig_t = NULL;
+	int orig_branch;
+	unsigned int hash_index, label;
+	str ti;
+
+	if(rpc->scan(c, "S", &ti) < 1) {
+		rpc->fault(c, 400, "Transaction ID expected");
+		return;
+	}
+
+	if(sscanf(ti.s, "%u:%u", &hash_index, &label) != 2) {
+		ERR("Invalid trans_id (%s)\n", ti.s);
+		rpc->fault(c, 400, "Invalid transaction ID");
+		return;
+	}
+	LM_DBG("hash_index=%u label=%u\n", hash_index, label);
+
+	tm_get_tb(&orig_t, &orig_branch);
+	if(t_lookup_ident(&trans, hash_index, label) < 0) {
+		ERR("Lookup failed\n");
+		rpc->fault(c, 481, "No such transaction");
+		return;
+	}
+
+	/* it is refcounted now */
+	ret = t_retransmit_reply(trans);
+	UNREF(trans);
+	tm_set_tb(orig_t, orig_branch);
+
+	if(ret < 0) {
+		LM_ERR("Reply retransmission failed\n");
+		rpc->fault(c, 500, "Reply retransmission failed");
 		return;
 	}
 }

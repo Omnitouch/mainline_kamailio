@@ -113,20 +113,20 @@ int pvh_collect_headers(struct sip_msg *msg)
 				val_part.len = strlen(hvals[idx]);
 				if(pvh_set_xavi(msg, &_pvh_params.xavi_name, &name, &val_part,
 						   SR_XTYPE_STR, 0, 1)
-						< 0)
+						== NULL)
 					return -1;
 			}
 			continue;
 		}
 		if(pvh_set_xavi(
 				   msg, &_pvh_params.xavi_name, &name, &val, SR_XTYPE_STR, 0, 1)
-				< 0)
+				== NULL)
 			return -1;
 	}
 
 	if(pvh_set_xavi(msg, &_pvh_params.xavi_helper_xname, &xavi_helper_name,
 			   &_pvh_params.xavi_name, SR_XTYPE_STR, 0, 0)
-			< 0)
+			== NULL)
 		return -1;
 
 	pvh_hdrs_set_collected(msg);
@@ -371,6 +371,22 @@ int pvh_remove_header(struct sip_msg *msg, str *hname, int indx)
 			return -1;
 	}
 
+	return 1;
+}
+
+int pvh_remove_all_headers(struct sip_msg *msg, int indx)
+{
+	str name = STR_NULL;
+	struct hdr_field *hf = NULL;
+
+	for(hf = msg->headers; hf; hf = hf->next) {
+		name.len = hf->name.len;
+		name.s = hf->name.s;
+		if(pvh_remove_header(msg, &name, indx) < 0) {
+			LM_ERR("could not remove %.*s header", name.len, name.s);
+			return -1;
+		}
+	}
 	return 1;
 }
 

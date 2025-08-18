@@ -546,7 +546,8 @@ inline static int pathmax(void)
 #endif
 	if(pathmax == 0) { /* init */
 		pathmax = pathconf("/", _PC_PATH_MAX);
-		pathmax = (pathmax <= 0) ? PATH_MAX_GUESS : pathmax + 1;
+		pathmax = (pathmax <= 0 || pathmax >= INT_MAX - 1) ? PATH_MAX_GUESS
+														   : pathmax + 1;
 	}
 	return pathmax;
 }
@@ -1155,6 +1156,60 @@ static inline int strno2int(str *val, unsigned int *mask)
 	}
 }
 
+/**
+ * split time value in two (upper and lower 4-bytes) unsigned int values
+ * - time value representation on 8 bytes: UUUULLLL
+ * - lower 4 bytes are returned (LLLL)
+ * - upper 4 bytes can be stored in second paramter (UUUU)
+ */
+static inline unsigned int ksr_time_uint(time_t *tv, unsigned int *tu)
+{
+	unsigned int tl; /* lower 4 bytes */
+	unsigned long long v64;
+	time_t t;
+
+	if(tv != NULL) {
+		t = *tv;
+	} else {
+		t = time(NULL);
+	}
+	v64 = (unsigned long long)t;
+	tl = (unsigned int)(v64 & 0xFFFFFFFFULL);
+	if(tu != NULL) {
+		/* upper 4 bytes */
+		*tu = (unsigned int)((v64 >> 32) & 0xFFFFFFFFULL);
+	}
+
+	return tl;
+}
+
+/**
+ * split time value in two (upper and lower 4-bytes) signed int values
+ * - time value representation on 8 bytes: UUUULLLL
+ * - lower 4 bytes are returned (LLLL)
+ * - upper 4 bytes can be stored in second paramter (UUUU)
+ */
+static inline int ksr_time_sint(time_t *tv, int *tu)
+{
+	int tl; /* lower 4 bytes */
+	long long v64;
+	time_t t;
+
+	if(tv != NULL) {
+		t = *tv;
+	} else {
+		t = time(NULL);
+	}
+	v64 = (long long)t;
+	tl = (int)(v64 & 0xFFFFFFFFLL);
+	if(tu != NULL) {
+		/* upper 4 bytes */
+		*tu = (int)((v64 >> 32) & 0xFFFFFFFFLL);
+	}
+
+	return tl;
+}
+
 /* converts a username into uid:gid,
  * returns -1 on error & 0 on success */
 int user2uid(int *uid, int *gid, char *user);
@@ -1238,5 +1293,7 @@ void *ser_memmem(const void *b1, const void *b2, size_t len1, size_t len2);
  * NULL if none is found.
  */
 void *ser_memrmem(const void *b1, const void *b2, size_t len1, size_t len2);
+
+int ksr_hex_decode_ws(str *shex, str *sraw);
 
 #endif

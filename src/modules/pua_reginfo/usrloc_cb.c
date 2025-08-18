@@ -53,6 +53,18 @@ Call-ID: 9ad9f89f-164d-bb86-1072-52e7e9eb5025.
 
 static int _pua_reginfo_self_op = 0;
 
+#define BUF_LEN 256
+int ki_reginfo_disable_publish(sip_msg_t *msg)
+{
+	reginfo_disable_publish = 1;
+	return 1;
+}
+
+int w_reginfo_disable_publish(struct sip_msg *msg, char *s1, char *s2)
+{
+	return ki_reginfo_disable_publish(msg);
+}
+
 void pua_reginfo_update_self_op(int v)
 {
 	_pua_reginfo_self_op = v;
@@ -245,6 +257,33 @@ error:
 	return NULL;
 }
 
+int reginfo_get_expires(urecord_t *record)
+{
+	// Loop through all record contacts and set the publish Expire value
+	// to the max expire of the contacts
+	ucontact_t *ptr;
+	time_t cur_time = time(0);
+	int expires = -1;
+	int tmp_expires;
+
+	ptr = record->contacts;
+	while(ptr) {
+		if(VALID_CONTACT(ptr, cur_time)) {
+			tmp_expires = (int)(ptr->expires - cur_time);
+			if(tmp_expires > expires) {
+				expires = tmp_expires;
+			}
+		}
+		ptr = ptr->next;
+	}
+	if(expires < 0) {
+		/* if we cannot calc expire from reg contacts, just use this default */
+		expires = 3600;
+	}
+
+	return expires;
+}
+
 void reginfo_usrloc_cb(ucontact_t *c, int type, void *param)
 {
 	str *body = NULL;
@@ -263,6 +302,15 @@ void reginfo_usrloc_cb(ucontact_t *c, int type, void *param)
 	if(_pua_reginfo_self_op == 1) {
 		LM_DBG("operation triggered by own action for aor: %.*s (%d)\n",
 				c->aor->len, c->aor->s, type);
+		return;
+	}
+
+	if(reginfo_disable_publish == 1) {
+		LM_DBG("Not publishing due to reginfo_disable_publish for aor: %.*s "
+			   "(%d)\n",
+				c->aor->len, c->aor->s, type);
+
+		reginfo_disable_publish = 0;
 		return;
 	}
 
@@ -350,7 +398,7 @@ void reginfo_usrloc_cb(ucontact_t *c, int type, void *param)
 	publ.id.s = id_buf;
 	publ.id.len = id_buf_len;
 	publ.content_type = content_type;
-	publ.expires = 3600;
+	publ.expires = reginfo_get_expires(record);
 
 	/* make UPDATE_TYPE, as if this "publish dialog" is not found
 	   by pua it will fallback to INSERT_TYPE anyway */

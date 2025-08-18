@@ -609,12 +609,14 @@ int sca_call_info_seize_held_call(sip_msg_t *msg, sca_call_info *call_info,
 	// all headers must be parsed before using lump functions
 	if(parse_headers(msg, HDR_EOH_F, 0) < 0) {
 		LM_ERR("Failed to parse_headers\n");
+		pkg_free(replaces_hdr.s);
 		goto done;
 	}
 
 	anchor = anchor_lump(msg, msg->eoh - msg->buf, 0, HDR_OTHER_T);
 	if(anchor == NULL) {
 		LM_ERR("Failed to anchor lump\n");
+		pkg_free(replaces_hdr.s);
 		goto done;
 	}
 
@@ -638,7 +640,6 @@ int sca_call_info_seize_held_call(sip_msg_t *msg, sca_call_info *call_info,
 	// we restore the original owner and dialog.
 	if(sca_appearance_update_owner_unsafe(app, contact_uri) < 0) {
 		LM_ERR("sca_call_info_seize_held_call: failed to update owner\n");
-		pkg_free(replaces_hdr.s);
 		goto done;
 	}
 

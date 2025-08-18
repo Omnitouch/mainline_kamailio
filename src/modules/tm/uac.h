@@ -32,6 +32,7 @@
 
 #define DEFAULT_CSEQ 10 /* Default CSeq number */
 
+
 /* structure for UAC interface
  *
  * You can free the memory allocated
@@ -53,7 +54,10 @@ typedef struct uac_req
 	transaction_cb *cb;
 	void *cbp;
 	str *callid;
+	str *fromtag;
 	unsigned int cseqno;
+	unsigned int fr_timeout;
+	unsigned int fr_inv_timeout;
 } uac_req_t;
 
 /* macro for setting the values of uac_req_t struct */

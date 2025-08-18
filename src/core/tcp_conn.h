@@ -40,7 +40,7 @@
 
 #define TCP_CHILD_TIMEOUT \
 	5							   /* after 5 seconds, the child "returns"
-							 * the connection to the tcp maing process */
+							 * the connection to the tcp main process */
 #define TCP_MAIN_SELECT_TIMEOUT 5  /* how often "tcp main" checks for timeout*/
 #define TCP_CHILD_SELECT_TIMEOUT 2 /* the same as above but for children */
 
@@ -376,7 +376,7 @@ typedef struct tcp_connection
 #define TCPCONN_UNLOCK lock_release(tcpconn_lock);
 
 #define TCP_ALIAS_HASH_SIZE 4096
-#define TCP_ID_HASH_SIZE 1024
+#define TCP_ID_HASH_SIZE 2048
 
 /* hash (dst_ip, dst_port, local_ip, local_port) */
 static inline unsigned tcp_addr_hash(struct ip_addr *ip, unsigned short port,
@@ -437,5 +437,9 @@ typedef struct ws_event_info
 } ws_event_info_t;
 
 tcp_connection_t *ksr_tcpcon_evcb_get(void);
+
+int is_tcp_main(void);
+
+#define _tconfd(c) (is_tcp_main() ? (c)->s : (c)->fd)
 
 #endif

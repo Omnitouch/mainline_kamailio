@@ -113,12 +113,12 @@ static void tls_list(rpc_t *rpc, void *c)
 	int i, len, timeout;
 	struct tm timestamp;
 	char timestamp_s[128];
-	const char *sni;
+	const char *sni, *dom;
 
 	TCPCONN_LOCK;
 	for(i = 0; i < TCP_ID_HASH_SIZE; i++) {
 		for(con = tcpconn_id_hash[i]; con; con = con->id_next) {
-			if(con->rcv.proto != PROTO_TLS)
+			if(con->rcv.proto != PROTO_TLS && con->rcv.proto != PROTO_WSS)
 				continue;
 			tls_d = con->extra_data;
 			rpc->add(c, "{", &handle);
@@ -146,17 +146,19 @@ static void tls_list(rpc_t *rpc, void *c)
 
 			if(tls_d) {
 				sni = SSL_get_servername(tls_d->ssl, TLSEXT_NAMETYPE_host_name);
+				dom = tls_d->dom.s;
 				if(sni == NULL) {
 					sni = "N/A";
 				}
 			} else {
 				sni = "N/A";
+				dom = "N/A";
 			}
 
-			rpc->struct_add(handle, "dssdsdsd", "id", con->id, "sni", sni,
-					"timestamp", timestamp_s, "timeout", timeout, "src_ip",
-					src_ip, "src_port", con->rcv.src_port, "dst_ip", dst_ip,
-					"dst_port", con->rcv.dst_port);
+			rpc->struct_add(handle, "dsssdsdsd", "id", con->id, "dom", dom,
+					"sni", sni, "timestamp", timestamp_s, "timeout", timeout,
+					"src_ip", src_ip, "src_port", con->rcv.src_port, "dst_ip",
+					dst_ip, "dst_port", con->rcv.dst_port);
 			if(tls_d) {
 				if(SSL_get_current_cipher(tls_d->ssl)) {
 					tls_info = SSL_CIPHER_description(
@@ -274,7 +276,7 @@ static void tls_kill(rpc_t *rpc, void *c)
 	TCPCONN_LOCK;
 	for(i = 0; i < TCP_ID_HASH_SIZE; i++) {
 		for(con = tcpconn_id_hash[i]; con; con = con->id_next) {
-			if(con->rcv.proto != PROTO_TLS)
+			if(con->rcv.proto != PROTO_TLS && con->rcv.proto != PROTO_WSS)
 				continue;
 			if(con->id == kill_id) {
 				con->state = -2;

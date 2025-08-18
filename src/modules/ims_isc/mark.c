@@ -147,9 +147,15 @@ int isc_mark_get_from_lumps(struct sip_msg *msg, isc_mark *mark)
 
 	memset(mark, 0, sizeof(isc_mark));
 
-	parse_headers(msg, HDR_EOH_F, 0);
+	if(parse_headers(msg, HDR_EOH_F, 0) < 0) {
+		LM_ERR("failed to parse headers\n");
+		return 0;
+	}
 
-	anchor_lump(msg, msg->headers->name.s - msg->buf, 0, 0);
+	if(anchor_lump(msg, msg->headers->name.s - msg->buf, 0, 0) == NULL) {
+		LM_ERR("failed to create the anchor lump\n");
+		return 0;
+	}
 
 	lmp = msg->add_rm;
 	while(lmp) {
@@ -342,7 +348,7 @@ int isc_mark_write_route(struct sip_msg *msg, str *as, str *iscmark)
 {
 	struct hdr_field *first;
 	struct lump *anchor;
-	str route;
+	str route = STR_NULL;
 
 	parse_headers(msg, HDR_EOH_F, 0);
 	first = msg->headers;
@@ -361,6 +367,7 @@ int isc_mark_write_route(struct sip_msg *msg, str *as, str *iscmark)
 	anchor = anchor_lump(msg, first->name.s - msg->buf, 0, HDR_ROUTE_T);
 	if(anchor == NULL) {
 		LM_ERR("isc_mark_write_route: anchor_lump failed\n");
+		pkg_free(route.s);
 		return 0;
 	}
 

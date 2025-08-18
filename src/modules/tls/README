@@ -72,6 +72,10 @@ Olle E. Johansson
               10.38. engine_config (string)
               10.39. engine_algorithms (string)
               10.40. verify_client (string)
+              10.41. provider_quirks (integer)
+              10.42. keylog_mode (int)
+              10.43. keylog_file (str)
+              10.44. keylog_peer (str)
 
         11. Functions
 
@@ -150,9 +154,12 @@ Olle E. Johansson
    1.49. Set rand_engine parameter
    1.50. Set verify_client modparam parameter
    1.51. Set verify_client tls.cfg parameter
-   1.52. is_peer_verified usage
-   1.53. tls_set_connect_server_id usage
-   1.54. Use of event_route[tls:connection-out]
+   1.52. Set keylog_mode parameter
+   1.53. Set keylog_file parameter
+   1.54. Set keylog_peer parameter
+   1.55. is_peer_verified usage
+   1.56. tls_set_connect_server_id usage
+   1.57. Use of event_route[tls:connection-out]
 
 Chapter 1. Admin Guide
 
@@ -209,6 +216,10 @@ Chapter 1. Admin Guide
         10.38. engine_config (string)
         10.39. engine_algorithms (string)
         10.40. verify_client (string)
+        10.41. provider_quirks (integer)
+        10.42. keylog_mode (int)
+        10.43. keylog_file (str)
+        10.44. keylog_peer (str)
 
    11. Functions
 
@@ -648,6 +659,10 @@ Place holder
    10.38. engine_config (string)
    10.39. engine_algorithms (string)
    10.40. verify_client (string)
+   10.41. provider_quirks (integer)
+   10.42. keylog_mode (int)
+   10.43. keylog_file (str)
+   10.44. keylog_peer (str)
 
 10.1. tls_method (string)
 
@@ -1638,6 +1653,66 @@ method = TLSv1.2
 verify_client = optional_no_ca
 ...
 
+10.41. provider_quirks (integer)
+
+   Sets a flag to configure OpenSSL 3 behaviour. Currently only 1
+     * 0 - no flags set (default)
+     * 1 - create a new `OSSL_LIB_CTX` context in the child process. Known
+       to be required when using OpenSSL 3 pkcs11-provider.
+
+10.42. keylog_mode (int)
+
+   Control the TLS key logging functionality, available for libssl version
+   greater than 1.1.0. Its value is composed from bitwise values (can be
+   made as sum of them):
+     * 0 - keys logging not enabled
+     * 1 (bit 1) - initialise keys logging
+     * 2 (bit 2) - keys logging active
+     * 4 (bit 3) - write keys to NOTICE log
+     * 8 (bit 4) - write keys to file
+     * 16 (bit 5) - send keys to udp peer
+     * 1024 (bit 11) - enable filtering of keys logging. When set,
+       filtering is done on: "CLIENT_RANDOM",
+       "CLIENT_HANDSHAKE_TRAFFIC_SECRET",
+       "SERVER_HANDSHAKE_TRAFFIC_SECRET", "EXPORTER_SECRET",
+       "CLIENT_TRAFFIC_SECRET_0", "SERVER_TRAFFIC_SECRET_0"
+
+   Bit position is the index starting from 1 (practically a non-zero value
+   is (2 power (bitpos - 1)) ).
+
+   The default value: 0.
+
+   Example 1.52. Set keylog_mode parameter
+...
+modparam("tls", "keylog_mode", 15)
+...
+
+10.43. keylog_file (str)
+
+   Path to the file where to write the TLS keys. The values are appended
+   to the content of the file. The value 8 (bit 4) has to be set to
+   keylog_mode parameter.
+
+   The default value: NULL.
+
+   Example 1.53. Set keylog_file parameter
+...
+modparam("tls", "keylog_file", "/tmp/kamailio-tls-keylog.txt")
+...
+
+10.44. keylog_peer (str)
+
+   Address of the peer where to send the keys log. It has to be in the
+   format "proto:ip:port". Only "udp" protocol (proto) is supported. The
+   value 16 (bit 5) has to be set to keylog_mode parameter.
+
+   The default value: NULL.
+
+   Example 1.54. Set keylog_peer parameter
+...
+modparam("tls", "keylog_peer", "udp:127.0.0.1:8020")
+...
+
 11. Functions
 
    11.1. is_peer_verified()
@@ -1651,7 +1726,7 @@ verify_client = optional_no_ca
 
    It can be used only in a request route.
 
-   Example 1.52. is_peer_verified usage
+   Example 1.55. is_peer_verified usage
 ...
         if (proto==TLS && !is_peer_verified()) {
                 sl_send_reply("400", "No certificate or verification failed");
@@ -1670,7 +1745,7 @@ verify_client = optional_no_ca
 
    It can be used only in ANY_ROUTE.
 
-   Example 1.53. tls_set_connect_server_id usage
+   Example 1.56. tls_set_connect_server_id usage
 ...
     tls_set_connect_server_id("clientone");
 ...
@@ -1762,7 +1837,7 @@ verify_client = optional_no_ca
    If drop() is executed in the event route, then the data is no longer
    sent over the connection.
 
-   Example 1.54. Use of event_route[tls:connection-out]
+   Example 1.57. Use of event_route[tls:connection-out]
 ...
 event_route[tls:connection-out] {
   if($sndto(ip)=="1.2.3.4") {

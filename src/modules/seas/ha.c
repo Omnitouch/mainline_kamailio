@@ -156,7 +156,7 @@ static inline int parse_ping(
 		}
 		string++;
 	}
-	if(!(ping_period_s && pings_lost_s && ping_timeout_s)) {
+	if(!(pings_lost_s && ping_timeout_s)) {
 		LM_ERR("malformed ping config string. Unparseable :[%s]\n", string);
 		return -1;
 	}
@@ -190,6 +190,7 @@ int spawn_pinger(void)
 		return 0;
 	}
 	strcpy(whoami, "Pinger Process\n");
+	_ksr_is_main = 0;
 	is_dispatcher = 0;
 	my_as = 0;
 	/* child */

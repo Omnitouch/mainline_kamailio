@@ -35,7 +35,7 @@
 #include "../../core/pvar.h"
 #include "../../core/xavp.h"
 #include "../../core/parser/msg_parser.h"
-#include "../../core/rand/kam_rand.h"
+#include "../../core/utils/sruid.h"
 #include "../../modules/tm/tm_load.h"
 
 
@@ -85,12 +85,17 @@
 #define DS_DNS_MODE_TIMER  (1<<2)
 #define DS_DNS_MODE_QSRV   (1<<3)
 
+#define DS_STATE_MODE_SET  1
+#define DS_STATE_MODE_FUNC (1<<1)
+
 /* clang-format on */
 typedef struct ds_rctx
 {
 	int flags;
 	int code;
 	str reason;
+	str uri;
+	int setid;
 } ds_rctx_t;
 
 extern str ds_db_url;
@@ -138,6 +143,7 @@ extern int ds_probing_mode;
 extern str ds_outbound_proxy;
 extern str ds_default_socket;
 extern str ds_default_sockname;
+extern str ds_ping_socket;
 extern struct socket_info *ds_default_sockinfo;
 
 int ds_init_data(void);
@@ -154,12 +160,14 @@ int ds_select_dst(struct sip_msg *msg, int set, int alg, int mode);
 int ds_update_dst(struct sip_msg *msg, int upos, int mode);
 int ds_add_dst(int group, str *address, int flags, int priority, str *attrs);
 int ds_remove_dst(int group, str *address);
-int ds_update_state(
-		sip_msg_t *msg, int group, str *address, int state, ds_rctx_t *rctx);
-int ds_reinit_state(int group, str *address, int state);
+int ds_update_state(sip_msg_t *msg, int group, str *address, str *iuid,
+		int state, int mode, ds_rctx_t *rctx);
+int ds_reinit_state(int group, str *address, str *iuid, int state);
 int ds_reinit_state_all(int group, int state);
 int ds_reinit_duid_state(int group, str *vduid, int state);
-int ds_mark_dst(struct sip_msg *msg, int mode);
+int ds_mark_dst(struct sip_msg *msg, int state);
+int ds_mark_dst_mode(struct sip_msg *msg, int state, int mode);
+int ds_mark_addr(sip_msg_t *msg, int state, int group, str *uri, int mode);
 int ds_print_list(FILE *fout);
 int ds_log_sets(void);
 int ds_list_exist(int set);
@@ -199,6 +207,7 @@ typedef struct _ds_attrs {
 	str body;
 	str duid;
 	str socket;
+	str ping_socket;
 	str sockname;
 	int maxload;
 	int weight;
@@ -248,9 +257,11 @@ typedef struct _ds_dest {
 	struct ip_addr ip_address; 	/*!< IP of the address */
 	unsigned short int port; 	/*!< port of the URI */
 	unsigned short int proto; 	/*!< protocol of the URI */
-	int message_count;
+	int probing_count;
 	struct timeval dnstime;
 	ds_ocdata_t ocdata;	/*!< overload control attributes */
+	char buid[SRUID_SIZE]; /*!< buffer for internal uid */
+	str suid; /*!< str shortcut for internal uid */
 	struct _ds_dest *next;
 } ds_dest_t;
 
@@ -265,6 +276,7 @@ typedef struct _ds_set {
 	unsigned int rwlist[100];
 	struct _ds_set *next[2];
 	int longer;
+	int rrserial;		/*!< round-robin or serial flag */
 	gen_lock_t lock;
 } ds_set_t;
 
@@ -299,6 +311,8 @@ ds_set_t *ds_list_lookup(int set);
 int ds_ping_active_init(void);
 int ds_ping_active_get(void);
 int ds_ping_active_set(int v);
+
+int ds_sruid_init(void);
 
 /* Create if not exist and return ds_set_t by id */
 ds_set_t *ds_avl_insert(ds_set_t **root, int id, int *setn);

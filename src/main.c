@@ -59,6 +59,7 @@
 #include <sys/utsname.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/resource.h> /* getrlimit */
 #include <fcntl.h>
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -104,6 +105,7 @@
 #include "core/poll_types.h"
 #include "core/tcp_init.h"
 #include "core/tcp_options.h"
+#include "core/tcp_mtops.h"
 #ifdef CORE_TLS
 #include "core/tls/tls_init.h"
 #define tls_has_init_si() 1
@@ -287,6 +289,7 @@ void print_internals(void)
 	printf("  Version: %s\n", full_version);
 	printf("  Default config: %s\n", CFG_FILE);
 	printf("  Default paths to modules: %s\n", MODS_DIR);
+	printf("  Default path to runtime dir: %s\n", RUN_DIR);
 	printf("  Compile flags: %s\n", ver_flags);
 	printf("  MAX_RECV_BUFFER_SIZE=%d\n", MAX_RECV_BUFFER_SIZE);
 	printf("  MAX_SEND_BUFFER_SIZE=%d\n", MAX_SEND_BUFFER_SIZE);
@@ -494,6 +497,10 @@ struct socket_info *sendipv6_sctp;
 unsigned short port_no = 0; /* default port*/
 #ifdef USE_TLS
 unsigned short tls_port_no = 0; /* default port */
+#endif
+
+#ifdef USE_TLS
+int tls_connection_match_domain = 0;
 #endif
 
 struct host_alias *aliases = 0; /* name aliases list */
@@ -2199,8 +2206,6 @@ int main(int argc, char **argv)
 	char *listen_fields[3];
 	char *options;
 	int ret;
-	unsigned int seed;
-	int rfd;
 	int debug_save, debug_flag;
 	int dont_fork_cnt;
 	struct name_lst *n_lst;
@@ -2209,6 +2214,7 @@ int main(int argc, char **argv)
 	char *tbuf_tmp;
 	struct stat st = {0};
 	long l1 = 0;
+	struct rlimit lim;
 
 	int option_index = 0;
 
@@ -2711,30 +2717,15 @@ int main(int argc, char **argv)
 				cfg_file, strerror(errno));
 		goto error;
 	}
-
-	/* seed the prng */
-	/* try to use /dev/urandom if possible */
-	seed = 0;
-	if((rfd = open("/dev/urandom", O_RDONLY)) != -1) {
-	try_again:
-		if(read(rfd, (void *)&seed, sizeof(seed)) == -1) {
-			if(errno == EINTR)
-				goto try_again; /* interrupted by signal */
-			LM_WARN("could not read from /dev/urandom (%d)\n", errno);
-		}
-		LM_DBG("read %u from /dev/urandom\n", seed);
-		close(rfd);
-	} else {
-		LM_WARN("could not open /dev/urandom (%d)\n", errno);
+	/* we need to do it early, as other user should get proper random numbers */
+	if(cryptorand_init() != 0) {
+		fprintf(stderr,
+				"ERROR: could not initalize secure random number generator\n");
+		goto error;
 	}
-	seed += getpid() + time(0);
-	LM_DBG("seeding PRNG with %u\n", seed);
-	cryptorand_seed(seed);
 	fastrand_seed(cryptorand());
 	kam_srand(cryptorand());
 	srandom(cryptorand());
-	LM_DBG("test random numbers %u %lu %u %u\n", kam_rand(), random(),
-			fastrand(), cryptorand());
 
 	/*register builtin  modules*/
 	register_builtin_modules();
@@ -3310,7 +3301,20 @@ int main(int argc, char **argv)
 			fprintf(stderr, "ERROR: error could not increase file limits\n");
 			goto error;
 		}
+	} else {
+		if(getrlimit(RLIMIT_NOFILE, &lim) < 0) {
+			LM_CRIT("cannot get the maximum number of file descriptors: %s\n",
+					strerror(errno));
+			goto error;
+		}
+		LM_INFO("current open file limits [soft/hard]: [%lu/%lu]\n",
+				(unsigned long)lim.rlim_cur, (unsigned long)lim.rlim_max);
 	}
+
+	LM_DBG("test random number generators - kam_rand: %u, random: %lu, "
+		   "fastrand %u, cryptorand %u\n",
+			kam_rand(), random(), fastrand(), cryptorand());
+
 	if(mlock_pages)
 		mem_lock_pages();
 
@@ -3384,6 +3388,16 @@ int main(int argc, char **argv)
 		goto error;
 	}
 #endif
+
+	if(ksr_tcp_main_threads != 0) {
+		if(ksr_tcpx_proc_list_init() < 0) {
+			LM_ERR("failed to initialize multi-thread processing list\n");
+			goto error;
+		}
+		LM_INFO("tcp main processing threads initialized\n");
+	} else {
+		LM_INFO("tcp main processing threads not enabled\n");
+	}
 
 	/* fix routing lists */
 	if((r = fix_rls()) != 0) {

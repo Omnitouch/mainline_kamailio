@@ -1406,7 +1406,7 @@ static int ki_ht_setxi(
 		return -1;
 	}
 
-	return 0;
+	return 1;
 }
 
 /**
@@ -1561,7 +1561,7 @@ static void htable_rpc_delete(rpc_t *rpc, void *c)
 	int res;
 
 	if(rpc->scan(c, "SS", &htname, &keyname) < 2) {
-		rpc->fault(c, 500, "Not enough parameters (htable name & key name");
+		rpc->fault(c, 500, "Not enough parameters (htable name & key name)");
 		return;
 	}
 	ht = ht_get_table(&htname);

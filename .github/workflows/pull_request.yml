@@ -12,10 +12,63 @@ jobs:
     permissions:
       contents: read # to fetch code (actions/checkout)
     steps:
-      - uses: actions/checkout@v4
-      - uses: wolletd/clang-format-checker@v1.11
+      - name: Check out the repository to the runner
+        uses: actions/checkout@v5
+      - name: Run clang-format check
+        uses: wolletd/clang-format-checker@v1.12
         with:
           target-ref: master
+  check-cmake-format:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to fetch code (actions/checkout)
+    steps:
+      - name: Check out scripts folder to the runner
+        uses: actions/checkout@v5
+        with:
+          ref: master
+          path: actions
+          sparse-checkout: |
+            .github/scripts/check-cmake-format.sh
+          sparse-checkout-cone-mode: false
+      - name: Check out the repository to the runner
+        uses: actions/checkout@v5
+        with:
+          path: source
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: awalsh128/cache-apt-pkgs-action@v1.5.1
+        with:
+          packages: cmake-format
+      - name: Run scripts/check-cmake-format.sh
+        run: ${{ github.workspace }}/actions/.github/scripts/check-cmake-format.sh
+        working-directory: ${{ github.workspace }}/source
+        env:
+          ref: ${{ github.event.pull_request.head.sha }}
+          FETCH_DEPTH: 50
+  check-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to fetch code (actions/checkout)
+    steps:
+      - name: Check out scripts folder to the runner
+        uses: actions/checkout@v5
+        with:
+          ref: master
+          path: actions
+          sparse-checkout: |
+            .github/scripts/check-commit.sh
+          sparse-checkout-cone-mode: false
+      - name: Check out the repository to the runner
+        uses: actions/checkout@v5
+        with:
+          path: source
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Run scripts/check-commit.sh
+        run: ${{ github.workspace }}/actions/.github/scripts/check-commit.sh
+        working-directory: ${{ github.workspace }}/source
+        env:
+          ref: ${{ github.event.pull_request.head.sha }}
+          FETCH_DEPTH: 50
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -38,7 +91,8 @@ jobs:
           - distribution: bookworm
             compilier: clang
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the repository to the runner
+        uses: actions/checkout@v5
       - uses: ammaraskar/gcc-problem-matcher@0.3.0
       - name: build
         run: |
