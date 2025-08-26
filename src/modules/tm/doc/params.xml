@@ -18,8 +18,12 @@
     <section id="tm.p.fr_timer">
 	<title><varname>fr_timer</varname> (integer)</title>
 	<para>
-	    Timer which hits if no final reply for a request or ACK for a
-	    negative INVITE reply arrives (in milliseconds).
+		This timer is used for all SIP requests. It hits if no reply for an
+		request INVITE request or other request has been received
+		within (F in milliseconds). If a provisional reply is received for an
+		INVITE (any 1xx), then the fr_inv_timer will be used instead. And if
+		no replies (at all) for an INVITE are received before fr_timer hits,
+		the transaction is terminated with a 408 in failure route.
 	</para>
 	<para>
 	    Default value is 30000 ms (30 seconds).
@@ -1740,5 +1744,46 @@ modparam("tm", "reply_408_reason", "Gone")
 		</example>
 	</section>
 
+	<section id="tm.p.rdelayed_reply">
+		<title><varname>delayed_reply</varname> (int)</title>
+		<para>
+			If set to 1, the reply generation in case of request
+			processing/forwarding error is delayed till the config script
+			execution ends. This allows the script writer to send its
+			own error reply. If set to 0, the transaction is replied and killed
+			immediately.
+		</para>
+		<emphasis>
+			Default value is <quote>1</quote>.
+		</emphasis>
+		<example>
+			<title>delayed_reply example</title>
+			<programlisting>
+...
+modparam("tm", "delayed_reply", 0)
+....
+			</programlisting>
+		</example>
+	</section>
+
+	<section id="tm.p.evlreq_mode">
+		<title><varname>evlreq_mode</varname> (int)</title>
+		<para>
+			If bit 1 is set (value 1), the event_route[tm:local-request] is also
+			executed for hop-by-hop CANCEL requests (for received INVITEs,
+			not only for local generated ones).
+		</para>
+		<emphasis>
+			Default value is <quote>0</quote>.
+		</emphasis>
+		<example>
+			<title>evlreq_mode example</title>
+			<programlisting>
+...
+modparam("tm", "evlreq_mode", 1)
+....
+			</programlisting>
+		</example>
+	</section>
 
 </section>

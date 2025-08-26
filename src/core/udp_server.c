@@ -348,7 +348,7 @@ int probe_max_send_buffer(int udp_sock)
 #ifdef USE_MCAST
 
 /*
- * Setup multicast receiver
+ * Set up multicast receiver
  */
 static int setup_mcast_rcvr(
 		int sock, union sockaddr_union *addr, char *interface)
@@ -685,7 +685,8 @@ int udp_rcv_loop()
 		}
 		if(ksr_msg_recv_max_size <= len) {
 			LOG(cfg_get(core, core_cfg, corelog),
-					"read message too large: %d\n", len);
+					"read message too large: %d (cfg msg recv max size: %d)\n",
+					len, ksr_msg_recv_max_size);
 			continue;
 		}
 		if(fromaddrlen != (unsigned int)sockaddru_len(bind_address->su)) {

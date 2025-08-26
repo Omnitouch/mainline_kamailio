@@ -28,11 +28,22 @@
 #include "bencode.h"
 #include "../../core/str.h"
 #include "../../core/locking.h"
-#include "rtpengine_common.h"
 
 #define RTPENGINE_MIN_RECHECK_TICKS 0
 #define RTPENGINE_MAX_RECHECK_TICKS ((unsigned int)-1)
 #define RTPENGINE_ALL_BRANCHES -1
+
+#define RTPENGINE_CALLER 0
+#define RTPENGINE_CALLEE 1
+
+#define RTP_SUBSCRIBE_MODE_SIPREC (1 << 0)
+#define RTP_SUBSCRIBE_MODE_DISABLE (1 << 1)
+
+#define RTP_SUBSCRIBE_LEG_CALLER (1 << 2)
+#define RTP_SUBSCRIBE_LEG_CALLEE (1 << 3)
+#define RTP_SUBSCRIBE_LEG_BOTH \
+	(RTP_SUBSCRIBE_LEG_CALLER | RTP_SUBSCRIBE_LEG_CALLEE)
+#define RTP_SUBSCRIBE_MAX_STREAMS 32
 
 enum rtpe_operation
 {
@@ -106,9 +117,10 @@ struct rtpp_set_head
 
 
 struct rtpp_node *get_rtpp_node(struct rtpp_set *rtpp_list, str *url);
-struct rtpp_set *get_rtpp_set(unsigned int set_id);
+struct rtpp_set *get_rtpp_set(unsigned int set_id, unsigned int create_new);
 int add_rtpengine_socks(struct rtpp_set *rtpp_list, char *rtpengine,
 		unsigned int weight, int disabled, unsigned int ticks, int isDB);
+int get_rtpp_set_id_by_node(struct rtpp_node *node);
 
 int rtpengine_delete_node(struct rtpp_node *rtpp_node);
 int rtpengine_delete_node_set(struct rtpp_set *rtpp_list);
@@ -123,6 +135,7 @@ extern str rtpp_setid_col;
 extern str rtpp_url_col;
 extern str rtpp_weight_col;
 extern str rtpp_disabled_col;
+extern int hash_table_tout;
 
 enum hash_algo_t
 {
@@ -138,7 +151,19 @@ struct rtpengine_session
 	str *callid;
 	str *from_tag;
 	str *to_tag;
-	str *body;
+};
+
+struct rtpengine_stream
+{
+	int leg;	  /* corresponds to participant, 0: caller , 1: callee */
+	int medianum; /* sequentially numbered index of the media for each participant, starting with one */
+	int label;	  /* label of media stream */
+};
+
+struct rtpengine_streams
+{
+	int count;
+	struct rtpengine_stream streams[RTP_SUBSCRIBE_MAX_STREAMS];
 };
 
 #endif

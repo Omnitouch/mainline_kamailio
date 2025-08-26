@@ -373,6 +373,7 @@ MSG_RECV_MAX_SIZE msg_recv_max_size
 TCP_MSG_READ_TIMEOUT tcp_msg_read_timeout
 TCP_MSG_DATA_TIMEOUT tcp_msg_data_timeout
 TCP_ACCEPT_IPLIMIT tcp_accept_iplimit
+TCP_MAIN_THREADS tcp_main_threads
 TCP_CHECK_TIMER tcp_check_timer
 CHILDREN children
 SOCKET socket
@@ -395,6 +396,7 @@ MEMADDSIZE	"mem_add_size"
 MEMJOIN		"mem_join"
 MEMSTATUSMODE		"mem_status_mode"
 CORELOG		"corelog"|"core_log"
+COREPARAM	"coreparam"
 SIP_PARSER_LOG_ONELINE "sip_parser_log_oneline"
 SIP_PARSER_LOG "sip_parser_log"
 SIP_PARSER_MODE "sip_parser_mode"
@@ -446,6 +448,7 @@ TCP_CLONE_RCVBUF	"tcp_clone_rcvbuf"
 TCP_REUSE_PORT		"tcp_reuse_port"
 TCP_WAIT_DATA	"tcp_wait_data"
 TCP_SCRIPT_MODE	"tcp_script_mode"
+TLS_CONNECTION_MATCH_DOMAIN "tls_connection_match_domain"
 DISABLE_TLS		"disable_tls"|"tls_disable"
 ENABLE_TLS		"enable_tls"|"tls_enable"
 TLS_THREADS_MODE	"tls_threads_mode"
@@ -869,6 +872,7 @@ IMPORTFILE      "import_file"
 <INITIAL>{TCP_MSG_READ_TIMEOUT}	{ count(); yylval.strval=yytext; return TCP_MSG_READ_TIMEOUT; }
 <INITIAL>{TCP_MSG_DATA_TIMEOUT}	{ count(); yylval.strval=yytext; return TCP_MSG_DATA_TIMEOUT; }
 <INITIAL>{TCP_ACCEPT_IPLIMIT}	{ count(); yylval.strval=yytext; return TCP_ACCEPT_IPLIMIT; }
+<INITIAL>{TCP_MAIN_THREADS}	{ count(); yylval.strval=yytext; return TCP_MAIN_THREADS; }
 <INITIAL>{TCP_CHECK_TIMER}	{ count(); yylval.strval=yytext; return TCP_CHECK_TIMER; }
 <INITIAL>{CHILDREN}	{ count(); yylval.strval=yytext; return CHILDREN; }
 <INITIAL>{SOCKET}	{ count(); yylval.strval=yytext; return SOCKET; }
@@ -893,6 +897,7 @@ IMPORTFILE      "import_file"
 <INITIAL>{SIP_PARSER_LOG}  { count(); yylval.strval=yytext; return SIP_PARSER_LOG; }
 <INITIAL>{SIP_PARSER_MODE}  { count(); yylval.strval=yytext; return SIP_PARSER_MODE; }
 <INITIAL>{CORELOG}	{ count(); yylval.strval=yytext; return CORELOG; }
+<INITIAL>{COREPARAM}	{ count(); yylval.strval=yytext; return COREPARAM; }
 <INITIAL>{SIP_WARNING}	{ count(); yylval.strval=yytext; return SIP_WARNING; }
 <INITIAL>{USER}		{ count(); yylval.strval=yytext; return USER; }
 <INITIAL>{GROUP}	{ count(); yylval.strval=yytext; return GROUP; }
@@ -969,6 +974,8 @@ IMPORTFILE      "import_file"
 <INITIAL>{TCP_WAIT_DATA}	{ count(); yylval.strval=yytext;
 									return TCP_WAIT_DATA; }
 <INITIAL>{TCP_SCRIPT_MODE}	{ count(); yylval.strval=yytext; return TCP_SCRIPT_MODE; }
+<INITIAL>{TLS_CONNECTION_MATCH_DOMAIN}	{ count(); yylval.strval=yytext;
+									return TLS_CONNECTION_MATCH_DOMAIN; }
 <INITIAL>{DISABLE_TLS}	{ count(); yylval.strval=yytext; return DISABLE_TLS; }
 <INITIAL>{ENABLE_TLS}	{ count(); yylval.strval=yytext; return ENABLE_TLS; }
 <INITIAL>{TLS_THREADS_MODE}	{ count(); yylval.strval=yytext; return TLS_THREADS_MODE; }

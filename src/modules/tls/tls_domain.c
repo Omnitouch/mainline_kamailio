@@ -66,6 +66,7 @@ extern EVP_PKEY *tls_engine_private_key(const char *key_id);
 #include "tls_verify.h"
 
 extern int ksr_tls_key_password_mode;
+extern int *ksr_tls_keylog_mode;
 
 /*
  * ECDHE is enabled only on OpenSSL 1.0.0e and later.
@@ -737,11 +738,27 @@ static int set_cipher_list(tls_domain_t *d)
 		return 0;
 	procs_no = get_max_procs();
 	for(i = 0; i < procs_no; i++) {
+#if OPENSSL_VERSION_NUMBER < 0x030000000L
 		if(SSL_CTX_set_cipher_list(d->ctx[i], cipher_list) == 0) {
 			ERR("%s: Failure to set SSL context cipher list \"%s\"\n",
 					tls_domain_str(d), cipher_list);
 			return -1;
 		}
+#else
+		if(d->method == TLS_USE_TLSv1_3 || d->method == TLS_USE_TLSv1_3_PLUS) {
+			if(SSL_CTX_set_ciphersuites(d->ctx[i], cipher_list) == 0) {
+				ERR("%s: Failure to set SSL context cipher suites \"%s\"\n",
+						tls_domain_str(d), cipher_list);
+				return -1;
+			}
+		} else {
+			if(SSL_CTX_set_cipher_list(d->ctx[i], cipher_list) == 0) {
+				ERR("%s: Failure to set SSL context cipher list \"%s\"\n",
+						tls_domain_str(d), cipher_list);
+				return -1;
+			}
+		}
+#endif
 #if !defined(OPENSSL_NO_ECDH) && OPENSSL_VERSION_NUMBER < 0x10100000L
 		setup_ecdh(d->ctx[i]);
 #endif
@@ -1072,6 +1089,25 @@ static int tls_server_name_cb(SSL *ssl, int *ad, void *private)
 }
 #endif
 
+static void ksr_tls_keylog_callback(const SSL *ssl, const char *line)
+{
+	if(ksr_tls_keylog_mode == NULL) {
+		return;
+	}
+	if(!(*ksr_tls_keylog_mode & KSR_TLS_KEYLOG_MODE_ACTIVE)) {
+		return;
+	}
+	if(*ksr_tls_keylog_mode & KSR_TLS_KEYLOG_MODE_VFILTER) {
+		if(ksr_tls_keylog_vfilter_match(line) == 0) {
+			return;
+		}
+	}
+	if(*ksr_tls_keylog_mode & KSR_TLS_KEYLOG_MODE_MLOG) {
+		LM_NOTICE("tlskeylog: %s\n", line);
+	}
+	ksr_tls_keylog_file_write(ssl, line);
+	ksr_tls_keylog_peer_send(ssl, line);
+}
 
 /**
  * @brief Initialize all domain attributes from default domains if necessary
@@ -1136,6 +1172,10 @@ static int ksr_tls_fix_domain(tls_domain_t *d, tls_domain_t *def)
 					tls_domain_str(d), i, e, ERR_error_string(e, NULL),
 					ERR_reason_error_string(e));
 			return -1;
+		}
+		if((ksr_tls_keylog_mode != NULL)
+				&& (*ksr_tls_keylog_mode & KSR_TLS_KEYLOG_MODE_INIT)) {
+			SSL_CTX_set_keylog_callback(d->ctx[i], ksr_tls_keylog_callback);
 		}
 		if(d->method > TLS_USE_TLSvRANGE) {
 			if(sr_tls_methods[d->method - 1].TLSMethodMin) {

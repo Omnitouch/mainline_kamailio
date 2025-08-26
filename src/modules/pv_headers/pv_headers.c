@@ -211,6 +211,12 @@ static int w_pvh_remove_header(
 	return pvh_remove_header(msg, &hname, indx);
 }
 
+static int w_pvh_remove_all_headers(struct sip_msg *msg, char *p1, char *p2)
+{
+	int indx = -1;
+	return pvh_remove_all_headers(msg, indx);
+}
+
 static int w_pvh_header_param_exists(struct sip_msg *msg, char *p1, char *p2)
 {
 	str hname = STR_NULL;
@@ -292,7 +298,7 @@ static int w_pvh_remove_header_param(struct sip_msg *msg, char *p1, char *p2)
 }
 
 /* clang-format off */
-static cmd_export_t cmds[] = {
+static cmd_export_t mod_cmds[] = {
 	{"pvh_collect_headers", (cmd_function)w_pvh_collect_headers, 0, 0, 0,
 			ANY_ROUTE},
 	{"pvh_apply_headers", (cmd_function)w_pvh_apply_headers, 0, 0, 0,
@@ -311,6 +317,8 @@ static cmd_export_t cmds[] = {
 			fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"pvh_remove_header", (cmd_function)w_pvh_remove_header, 2,
 			fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
+	{"pvh_remove_all_headers", (cmd_function)w_pvh_remove_all_headers, 0,
+			0, 0, ANY_ROUTE},
 	{"pvh_header_param_exists", (cmd_function)w_pvh_header_param_exists, 2,
 			fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"pvh_remove_header_param", (cmd_function)w_pvh_remove_header_param, 2,
@@ -348,7 +356,7 @@ static pv_export_t mod_pvs[] = {
 	{{0, 0}, 0, 0, 0, 0, 0, 0, 0}
 };
 
-static param_export_t params[] = {
+static param_export_t mod_params[] = {
 	{"xavi_name", PARAM_STR, &_pvh_params.xavi_name},
 	{"header_value_size", PARAM_INT, &_pvh_params.hdr_value_size},
 	{"header_collect_flag", PARAM_INT, &_pvh_params.flags[PVH_HDRS_COLLECTED]},
@@ -360,16 +368,16 @@ static param_export_t params[] = {
 };
 
 struct module_exports exports = {
-	MODULE_NAME,	 /* module name */
+	MODULE_NAME,     /* module name */
 	DEFAULT_DLFLAGS, /* dlopen flags */
-	cmds,			 /* exported functions */
-	params,			 /* exported parameters */
-	0,				 /* RPC method exports */
-	mod_pvs,		 /* exported pseudo-variables */
-	0,				 /* response handling function */
-	mod_init,		 /* module initialization function */
-	0,				 /* per-child init function */
-	mod_destroy		 /* module destroy function */
+	mod_cmds,        /* exported functions */
+	mod_params,      /* exported parameters */
+	0,               /* RPC method exports */
+	mod_pvs,         /* exported pseudo-variables */
+	0,               /* response handling function */
+	mod_init,        /* module initialization function */
+	0,               /* per-child init function */
+	mod_destroy      /* module destroy function */
 };
 /* clang-format on */
 

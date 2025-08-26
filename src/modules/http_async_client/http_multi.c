@@ -184,6 +184,14 @@ int sock_cb(CURL *e, curl_socket_t s, int what, void *cbp, void *sockp)
 		} else {
 			LM_DBG("Changing action from %s to %s\n", whatstr[cell->action],
 					whatstr[what]);
+			if(cell->action == CURL_POLL_IN && what == CURL_POLL_OUT) {
+				if(cell->reply) {
+					if(cell->reply->result)
+						shm_free(cell->reply->result);
+					shm_free(cell->reply);
+					cell->reply = NULL;
+				}
+			}
 			setsock(cell, s, e, what);
 		}
 	}
@@ -414,7 +422,7 @@ int init_http_multi(struct event_base *evbase, struct http_m_global *wg)
 
 	g->timer_event = evtimer_new(g->evbase, timer_cb, g);
 
-	/* setup the generic multi interface options we want */
+	/* set up the generic multi interface options we want */
 	curl_multi_setopt(g->multi, CURLMOPT_SOCKETFUNCTION, sock_cb);
 	curl_multi_setopt(g->multi, CURLMOPT_SOCKETDATA, g);
 	curl_multi_setopt(g->multi, CURLMOPT_TIMERFUNCTION, multi_timer_cb);
@@ -604,7 +612,7 @@ void check_multi_info(struct http_m_global *g)
 	CURL *easy;
 	CURLcode res;
 
-	struct http_m_cell *cell;
+	struct http_m_cell *cell = NULL;
 	double tmp_time;
 
 	LM_DBG("REMAINING: %d\n", g->still_running);
@@ -616,9 +624,15 @@ void check_multi_info(struct http_m_global *g)
 			curl_easy_getinfo(easy, CURLINFO_EFFECTIVE_URL, &eff_url);
 
 
-			LM_DBG("DONE: %s => (%d) %s\n", eff_url, res, cell->error);
+			LM_DBG("DONE: %s => (%d)\n", eff_url, res);
 
 			cell = http_m_cell_lookup(easy);
+			if(cell == NULL) {
+				LM_ERR("failed to get the cell\n");
+				curl_multi_remove_handle(g->multi, easy);
+				curl_easy_cleanup(easy);
+				continue;
+			}
 			if(msg->data.result != 0) {
 				LM_ERR("handle %p returned error %d: %s\n", easy, res,
 						cell->error);

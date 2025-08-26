@@ -72,6 +72,7 @@
 #include "pvapi.h"
 #include "config.h"
 #include "daemonize.h"
+#include "coreparam.h"
 #include "cfg_core.h"
 #include "cfg/cfg.h"
 #ifdef CORE_TLS
@@ -414,6 +415,7 @@ extern char *default_routename;
 %token SIP_PARSER_LOG
 %token SIP_PARSER_MODE
 %token CORELOG
+%token COREPARAM
 %token SIP_WARNING
 %token SERVER_SIGNATURE
 %token SERVER_HEADER
@@ -432,6 +434,7 @@ extern char *default_routename;
 %token TCP_MSG_READ_TIMEOUT
 %token TCP_MSG_DATA_TIMEOUT
 %token TCP_ACCEPT_IPLIMIT
+%token TCP_MAIN_THREADS
 %token TCP_CHECK_TIMER
 %token USER
 %token GROUP
@@ -476,6 +479,7 @@ extern char *default_routename;
 %token TCP_REUSE_PORT
 %token TCP_WAIT_DATA
 %token TCP_SCRIPT_MODE
+%token TLS_CONNECTION_MATCH_DOMAIN
 %token DISABLE_TLS
 %token ENABLE_TLS
 %token TLS_THREADS_MODE
@@ -1067,6 +1071,8 @@ assign_stm:
 	| TCP_MSG_DATA_TIMEOUT EQUAL error { yyerror("number expected"); }
 	| TCP_ACCEPT_IPLIMIT EQUAL NUMBER { ksr_tcp_accept_iplimit=$3; }
 	| TCP_ACCEPT_IPLIMIT EQUAL error { yyerror("number expected"); }
+	| TCP_MAIN_THREADS EQUAL NUMBER { ksr_tcp_main_threads=$3; }
+	| TCP_MAIN_THREADS EQUAL error { yyerror("number expected"); }
 	| TCP_CHECK_TIMER EQUAL NUMBER { ksr_tcp_check_timer=$3; }
 	| TCP_CHECK_TIMER EQUAL error { yyerror("number expected"); }
 	| CHILDREN EQUAL NUMBER { children_no=$3; }
@@ -1486,6 +1492,14 @@ assign_stm:
 		#endif
 	}
 	| TCP_SCRIPT_MODE EQUAL error { yyerror("number expected"); }
+	| TLS_CONNECTION_MATCH_DOMAIN EQUAL NUMBER {
+		#ifdef USE_TLS
+			tls_connection_match_domain=$3;
+		#else
+			warn("tls support not compiled in");
+		#endif
+	}
+	| TLS_CONNECTION_MATCH_DOMAIN EQUAL error { yyerror("number expected"); }
 	| DISABLE_TLS EQUAL NUMBER {
 		#ifdef USE_TLS
 			tls_disable=$3;
@@ -2137,6 +2151,32 @@ assign_stm:
 		IF_RAW_SOCKS(default_core_cfg.udp4_raw_ttl=$3);
 	}
 	| UDP4_RAW_TTL EQUAL error { yyerror("number expected"); }
+	| COREPARAM LBRACK ID RBRACK EQUAL NUMBER {
+		if(ksr_coreparam_set_nval($3, $6) < 0) {
+			yyerror("failed to set core parameter");
+		}
+	}
+	| COREPARAM LBRACK ID RBRACK EQUAL STRING {
+		if(ksr_coreparam_set_sval($3, $6) < 0) {
+			yyerror("failed to set core parameter");
+		}
+	}
+	| COREPARAM LBRACK ID RBRACK EQUAL error {
+		yyerror("string or number value expected");
+	}
+	| COREPARAM LBRACK STRING RBRACK EQUAL NUMBER {
+		if(ksr_coreparam_set_nval($3, $6) < 0) {
+			yyerror("failed to set core parameter");
+		}
+	}
+	| COREPARAM LBRACK STRING RBRACK EQUAL STRING {
+		if(ksr_coreparam_set_sval($3, $6) < 0) {
+			yyerror("failed to set core parameter");
+		}
+	}
+	| COREPARAM LBRACK STRING RBRACK EQUAL error {
+		yyerror("string or number value expected");
+	}
 	| cfg_var
 	| error EQUAL { yyerror("unknown config variable"); }
 	;
@@ -2886,6 +2926,7 @@ fcmd:
 				case MODULE5_T:
 				case MODULE6_T:
 				case MODULEX_T:
+				case ROUTE_T:
 				case SET_FWD_NO_CONNECT_T:
 				case SET_RPL_NO_CONNECT_T:
 				case SET_FWD_CLOSE_T:

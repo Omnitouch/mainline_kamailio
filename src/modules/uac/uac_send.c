@@ -58,39 +58,45 @@ static struct tm_binds _uac_send_tmb = {0};
 
 typedef struct _uac_send_info
 {
-    unsigned int flags;
-    char b_method[32];
-    str s_method;
-    char b_ruri[MAX_URI_SIZE];
-    str s_ruri;
-    char b_turi[MAX_URI_SIZE];
-    str s_turi;
-    char b_furi[MAX_URI_SIZE];
-    str s_furi;
-    char b_callid[128];
-    str s_callid;
-    char b_hdrs[MAX_UACH_SIZE];
-    str s_hdrs;
-    char b_body[MAX_UACB_SIZE];
-    str s_body;
-    char b_hex_body[MAX_UACB_SIZE];  // Hex string input
+	unsigned int flags;
+	char b_method[32];
+	str s_method;
+	char b_ruri[MAX_URI_SIZE];
+	str s_ruri;
+	char b_turi[MAX_URI_SIZE];
+	str s_turi;
+	char b_ttag[128];
+	str s_ttag;
+	char b_furi[MAX_URI_SIZE];
+	str s_furi;
+	char b_ftag[128];
+	str s_ftag;
+	char b_callid[128];
+	str s_callid;
+	char b_hdrs[MAX_UACH_SIZE];
+	str s_hdrs;
+	char b_body[MAX_UACB_SIZE];
+	str s_body;
+	char b_hex_body[MAX_UACB_SIZE];  // Hex string input
     str s_hex_body;                  // Hex string input
     char b_raw_body[MAX_UACB_SIZE];  // Raw binary data (decoded from hex)
     str s_raw_body;                  // Raw binary data (decoded from hex)
-    char b_ouri[MAX_URI_SIZE];
-    str s_ouri;
-    char b_sock[MAX_URI_SIZE];
-    str s_sock;
-    char b_auser[128];
-    str s_auser;
-    char b_apasswd[64];
-    str s_apasswd;
-    char b_evparam[MAX_UACD_SIZE];
-    str s_evparam;
-    unsigned int cseqno;
-    unsigned int evroute;
-    unsigned int evcode;
-    unsigned int evtype;
+	char b_ouri[MAX_URI_SIZE];
+	str s_ouri;
+	char b_sock[MAX_URI_SIZE];
+	str s_sock;
+	char b_auser[128];
+	str s_auser;
+	char b_apasswd[64];
+	str s_apasswd;
+	char b_evparam[MAX_UACD_SIZE];
+	str s_evparam;
+	unsigned int cseqno;
+	unsigned int fr_timeout;
+	unsigned int fr_inv_timeout;
+	unsigned int evroute;
+	unsigned int evcode;
+	unsigned int evtype;
 } uac_send_info_t;
 
 static int hex_decode(const char *hex, unsigned char *binary, int max_len) {
@@ -115,21 +121,23 @@ extern str uac_event_callback;
 
 void uac_send_info_copy(uac_send_info_t *src, uac_send_info_t *dst)
 {
-    memcpy(dst, src, sizeof(uac_send_info_t));
-    dst->s_method.s = dst->b_method;
-    dst->s_ruri.s = dst->b_ruri;
-    dst->s_turi.s = dst->b_turi;
-    dst->s_furi.s = dst->b_furi;
-    dst->s_hdrs.s = dst->b_hdrs;
-    dst->s_body.s = dst->b_body;
-    dst->s_hex_body.s = dst->b_hex_body;
+	memcpy(dst, src, sizeof(uac_send_info_t));
+	dst->s_method.s = dst->b_method;
+	dst->s_ruri.s = dst->b_ruri;
+	dst->s_turi.s = dst->b_turi;
+	dst->s_ttag.s = dst->b_ttag;
+	dst->s_furi.s = dst->b_furi;
+	dst->s_ftag.s = dst->b_ftag;
+	dst->s_hdrs.s = dst->b_hdrs;
+	dst->s_body.s = dst->b_body;
+	dst->s_hex_body.s = dst->b_hex_body;
     dst->s_raw_body.s = dst->b_raw_body;  // Copy raw_body
-    dst->s_ouri.s = dst->b_ouri;
-    dst->s_auser.s = dst->b_auser;
-    dst->s_apasswd.s = dst->b_apasswd;
-    dst->s_callid.s = dst->b_callid;
-    dst->s_sock.s = dst->b_sock;
-    dst->s_evparam.s = dst->b_evparam;
+	dst->s_ouri.s = dst->b_ouri;
+	dst->s_auser.s = dst->b_auser;
+	dst->s_apasswd.s = dst->b_apasswd;
+	dst->s_callid.s = dst->b_callid;
+	dst->s_sock.s = dst->b_sock;
+	dst->s_evparam.s = dst->b_evparam;
 }
 
 uac_send_info_t *uac_send_info_clone(uac_send_info_t *ur)
@@ -211,10 +219,24 @@ int pv_get_uac_req(struct sip_msg *msg, pv_param_t *param, pv_value_t *res)
 			return pv_get_uintval(msg, param, res, _uac_req.flags);
 		case 18:
 			return pv_get_uintval(msg, param, res, _uac_req.cseqno);
-		case 19:  // New case for hex_body
+		case 19:
+			return pv_get_uintval(msg, param, res, _uac_req.fr_timeout);
+		case 20:
+			return pv_get_uintval(msg, param, res, _uac_req.fr_inv_timeout);
+		case 21:
+			if(_uac_req.s_ftag.len <= 0)
+				return pv_get_null(msg, param, res);
+			return pv_get_strval(msg, param, res, &_uac_req.s_ftag);
+		case 22:
+			if(_uac_req.s_ttag.len <= 0)
+				return pv_get_null(msg, param, res);
+			return pv_get_strval(msg, param, res, &_uac_req.s_ttag);
+		case 23:  // New case for hex_body
             if(_uac_req.s_hex_body.len <= 0)
                 return pv_get_null(msg, param, res);
             return pv_get_strval(msg, param, res, &_uac_req.s_hex_body);
+
+
 		default:
 			return pv_get_uintval(msg, param, res, _uac_req.flags);
 	}
@@ -239,7 +261,9 @@ int pv_set_uac_req(
 				_uac_req.flags = 0;
 				_uac_req.s_ruri.len = 0;
 				_uac_req.s_furi.len = 0;
+				_uac_req.s_ftag.len = 0;
 				_uac_req.s_turi.len = 0;
+				_uac_req.s_ttag.len = 0;
 				_uac_req.s_ouri.len = 0;
 				_uac_req.s_hdrs.len = 0;
 				_uac_req.s_body.len = 0;
@@ -250,6 +274,8 @@ int pv_set_uac_req(
 				_uac_req.evtype = 0;
 				_uac_req.evcode = 0;
 				_uac_req.cseqno = 0;
+				_uac_req.fr_timeout = 0;
+				_uac_req.fr_inv_timeout = 0;
 				_uac_req.s_evparam.len = 0;
 			}
 			break;
@@ -512,7 +538,63 @@ int pv_set_uac_req(
 			}
 			_uac_req.cseqno = tval->ri;
 			break;
-		case 19:  // New case for hex_body
+		case 19:
+			if(tval == NULL) {
+				_uac_req.fr_timeout = 0;
+				return 0;
+			}
+			if(!(tval->flags & PV_VAL_INT)) {
+				LM_ERR("Invalid value type\n");
+				return -1;
+			}
+			_uac_req.fr_timeout = tval->ri;
+			break;
+		case 20:
+			if(tval == NULL) {
+				_uac_req.fr_inv_timeout = 0;
+				return 0;
+			}
+			if(!(tval->flags & PV_VAL_INT)) {
+				LM_ERR("Invalid value type\n");
+				return -1;
+			}
+			_uac_req.fr_inv_timeout = tval->ri;
+			break;
+		case 21:
+			if(tval == NULL) {
+				_uac_req.s_ftag.len = 0;
+				return 0;
+			}
+			if(!(tval->flags & PV_VAL_STR)) {
+				LM_ERR("Invalid value type\n");
+				return -1;
+			}
+			if(tval->rs.len >= 128) {
+				LM_ERR("Value size too big\n");
+				return -1;
+			}
+			memcpy(_uac_req.s_ftag.s, tval->rs.s, tval->rs.len);
+			_uac_req.s_ftag.s[tval->rs.len] = '\0';
+			_uac_req.s_ftag.len = tval->rs.len;
+			break;
+		case 22:
+			if(tval == NULL) {
+				_uac_req.s_ttag.len = 0;
+				return 0;
+			}
+			if(!(tval->flags & PV_VAL_STR)) {
+				LM_ERR("Invalid value type\n");
+				return -1;
+			}
+			if(tval->rs.len >= 128) {
+				LM_ERR("Value size too big\n");
+				return -1;
+			}
+			memcpy(_uac_req.s_ttag.s, tval->rs.s, tval->rs.len);
+			_uac_req.s_ttag.s[tval->rs.len] = '\0';
+			_uac_req.s_ttag.len = tval->rs.len;
+			break;
+		case 23:  // New case for hex_body
             if(tval == NULL) {
                 _uac_req.s_hex_body.len = 0;
                 return 0;
@@ -529,6 +611,7 @@ int pv_set_uac_req(
             _uac_req.s_hex_body.s[tval->rs.len] = '\0';
             _uac_req.s_hex_body.len = tval->rs.len;
             break;
+
 	}
 	return 0;
 }
@@ -550,8 +633,12 @@ int pv_parse_uac_req_name(pv_spec_p sp, str *in)
 				sp->pvp.pvn.u.isname.name.n = 1;
 			else if(strncmp(in->s, "turi", 4) == 0)
 				sp->pvp.pvn.u.isname.name.n = 2;
+			else if(strncmp(in->s, "ttag", 4) == 0)
+				sp->pvp.pvn.u.isname.name.n = 22;
 			else if(strncmp(in->s, "furi", 4) == 0)
 				sp->pvp.pvn.u.isname.name.n = 3;
+			else if(strncmp(in->s, "ftag", 4) == 0)
+				sp->pvp.pvn.u.isname.name.n = 21;
 			else if(strncmp(in->s, "hdrs", 4) == 0)
 				sp->pvp.pvn.u.isname.name.n = 4;
 			else if(strncmp(in->s, "body", 4) == 0)
@@ -597,10 +684,22 @@ int pv_parse_uac_req_name(pv_spec_p sp, str *in)
 			break;
 		case 8:
             if(strncmp(in->s, "hex_body", 8) == 0)
-                sp->pvp.pvn.u.isname.name.n = 19;
+                sp->pvp.pvn.u.isname.name.n = 23;
             else
                 goto error;
             break;
+		case 10:
+			if(strncmp(in->s, "fr_timeout", 10) == 0)
+				sp->pvp.pvn.u.isname.name.n = 19;
+			else
+				goto error;
+			break;
+		case 14:
+			if(strncmp(in->s, "fr_inv_timeout", 14) == 0)
+				sp->pvp.pvn.u.isname.name.n = 20;
+			else
+				goto error;
+			break;
 		default:
 			goto error;
 	}
@@ -616,28 +715,30 @@ error:
 
 void uac_req_init(void)
 {
-    /* load the TM API */
-    if(load_tm_api(&_uac_send_tmb) != 0) {
-        LM_DBG("can't load TM API - disable it\n");
-        memset(&_uac_send_tmb, 0, sizeof(struct tm_binds));
-        return;
-    }
-    memset(&_uac_req, 0, sizeof(struct _uac_send_info));
-    _uac_req.s_ruri.s = _uac_req.b_ruri;
-    _uac_req.s_furi.s = _uac_req.b_furi;
-    _uac_req.s_turi.s = _uac_req.b_turi;
-    _uac_req.s_ouri.s = _uac_req.b_ouri;
-    _uac_req.s_hdrs.s = _uac_req.b_hdrs;
-    _uac_req.s_body.s = _uac_req.b_body;
-    _uac_req.s_hex_body.s = _uac_req.b_hex_body;
+	/* load the TM API */
+	if(load_tm_api(&_uac_send_tmb) != 0) {
+		LM_DBG("can't load TM API - disable it\n");
+		memset(&_uac_send_tmb, 0, sizeof(struct tm_binds));
+		return;
+	}
+	memset(&_uac_req, 0, sizeof(struct _uac_send_info));
+	_uac_req.s_ruri.s = _uac_req.b_ruri;
+	_uac_req.s_furi.s = _uac_req.b_furi;
+	_uac_req.s_ftag.s = _uac_req.b_ftag;
+	_uac_req.s_turi.s = _uac_req.b_turi;
+	_uac_req.s_ttag.s = _uac_req.b_ttag;
+	_uac_req.s_ouri.s = _uac_req.b_ouri;
+	_uac_req.s_hdrs.s = _uac_req.b_hdrs;
+	_uac_req.s_body.s = _uac_req.b_body;
+	_uac_req.s_hex_body.s = _uac_req.b_hex_body;
     _uac_req.s_raw_body.s = _uac_req.b_raw_body;  // Initialize raw_body
-    _uac_req.s_method.s = _uac_req.b_method;
-    _uac_req.s_auser.s = _uac_req.b_auser;
-    _uac_req.s_apasswd.s = _uac_req.b_apasswd;
-    _uac_req.s_callid.s = _uac_req.b_callid;
-    _uac_req.s_sock.s = _uac_req.b_sock;
-    _uac_req.s_evparam.s = _uac_req.b_evparam;
-    return;
+	_uac_req.s_method.s = _uac_req.b_method;
+	_uac_req.s_auser.s = _uac_req.b_auser;
+	_uac_req.s_apasswd.s = _uac_req.b_apasswd;
+	_uac_req.s_callid.s = _uac_req.b_callid;
+	_uac_req.s_sock.s = _uac_req.b_sock;
+	_uac_req.s_evparam.s = _uac_req.b_evparam;
+	return;
 }
 
 int uac_send_tmdlg(dlg_t *tmdlg, sip_msg_t *rpl)
@@ -856,11 +957,13 @@ void uac_send_tm_callback(struct cell *t, int type, struct tmcb_params *ps)
 	uac_r.ssock = (tp->s_sock.len <= 0) ? NULL : &tp->s_sock;
 	uac_r.dialog = &tmdlg;
 	uac_r.cb_flags = TMCB_LOCAL_COMPLETED | TMCB_DESTROY;
+	uac_r.fr_timeout = tp->fr_timeout;
+	uac_r.fr_inv_timeout = tp->fr_inv_timeout;
 	if(tp->evroute != 0) {
 		/* Callback function */
 		uac_r.cb = uac_resend_tm_callback;
 		/* Callback parameter */
-		uac_r.cbp = (void *)tp;
+		uac_r.cbp = (void *)uac_send_info_clone(tp);
 	}
 	ret = _uac_send_tmb.t_request_within(&uac_r);
 
@@ -869,13 +972,18 @@ void uac_send_tm_callback(struct cell *t, int type, struct tmcb_params *ps)
 		goto error;
 	}
 	if(uac_r.cb_flags & TMCB_LOCAL_REQUEST_DROP) {
+		if(uac_r.cbp != NULL)
+			shm_free(uac_r.cbp);
+
 		shm_free(tp);
 		*ps->param = NULL;
 		tp = NULL;
 	}
 
-	if(tp->evroute != 0) {
-		return;
+	if(tp != NULL) {
+		if(tp->evroute != 0) {
+			return;
+		}
 	}
 
 done:
@@ -921,6 +1029,8 @@ int uac_req_send(void)
     } else if(uac_default_socket.s != NULL && uac_default_socket.len > 0) {
         uac_r.ssock = &uac_default_socket;
     }
+	uac_r.fr_timeout = _uac_req.fr_timeout;
+	uac_r.fr_inv_timeout = _uac_req.fr_inv_timeout;
 
     if((_uac_req.s_auser.len > 0 && _uac_req.s_apasswd.len > 0)
             || (_uac_req.evroute > 0)) {

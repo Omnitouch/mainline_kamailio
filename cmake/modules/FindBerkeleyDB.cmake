@@ -45,7 +45,7 @@ endif()
 
 find_path(
   BerkeleyDB_INCLUDE_DIR
-  NAMES db_cxx.h
+  NAMES db.h
   HINTS ${_BerkeleyDB_homebrew_prefix}/include
   PATH_SUFFIXES
     4.8
@@ -70,20 +70,11 @@ if(NOT BerkeleyDB_LIBRARY)
     set(CMAKE_FIND_USE_CMAKE_PATH FALSE)
   endif()
 
-  get_filename_component(
-    _BerkeleyDB_lib_hint "${BerkeleyDB_INCLUDE_DIR}" DIRECTORY
-  )
+  get_filename_component(_BerkeleyDB_lib_hint "${BerkeleyDB_INCLUDE_DIR}" DIRECTORY)
 
   find_library(
     BerkeleyDB_LIBRARY_RELEASE
-    NAMES db_cxx-4.8
-          db4_cxx
-          db48
-          db_cxx-5.3
-          db_cxx-5
-          db_cxx
-          libdb48
-          NAMES_PER_DIR
+    NAMES db48 db53 db NAMES_PER_DIR
     HINTS ${_BerkeleyDB_lib_hint}
     PATH_SUFFIXES lib
   )
@@ -91,14 +82,7 @@ if(NOT BerkeleyDB_LIBRARY)
 
   find_library(
     BerkeleyDB_LIBRARY_DEBUG
-    NAMES db_cxx-4.8
-          db4_cxx
-          db48
-          db_cxx-5.3
-          db_cxx-5
-          db_cxx
-          libdb48
-          NAMES_PER_DIR
+    NAMES db48 db53 db NAMES_PER_DIR
     HINTS ${_BerkeleyDB_lib_hint}
     PATH_SUFFIXES debug/lib
   )
@@ -118,26 +102,21 @@ if(BerkeleyDB_INCLUDE_DIR)
   file(STRINGS "${BerkeleyDB_INCLUDE_DIR}/db.h" _BerkeleyDB_version_strings
        REGEX "^#define[\t ]+DB_VERSION_(MAJOR|MINOR|PATCH)[ \t]+[0-9]+.*"
   )
-  string(REGEX
-         REPLACE ".*#define[\t ]+DB_VERSION_MAJOR[ \t]+([0-9]+).*" "\\1"
-                 _BerkeleyDB_version_major "${_BerkeleyDB_version_strings}"
+  string(REGEX REPLACE ".*#define[\t ]+DB_VERSION_MAJOR[ \t]+([0-9]+).*" "\\1"
+                       _BerkeleyDB_version_major "${_BerkeleyDB_version_strings}"
   )
-  string(REGEX
-         REPLACE ".*#define[\t ]+DB_VERSION_MINOR[ \t]+([0-9]+).*" "\\1"
-                 _BerkeleyDB_version_minor "${_BerkeleyDB_version_strings}"
+  string(REGEX REPLACE ".*#define[\t ]+DB_VERSION_MINOR[ \t]+([0-9]+).*" "\\1"
+                       _BerkeleyDB_version_minor "${_BerkeleyDB_version_strings}"
   )
-  string(REGEX
-         REPLACE ".*#define[\t ]+DB_VERSION_PATCH[ \t]+([0-9]+).*" "\\1"
-                 _BerkeleyDB_version_patch "${_BerkeleyDB_version_strings}"
+  string(REGEX REPLACE ".*#define[\t ]+DB_VERSION_PATCH[ \t]+([0-9]+).*" "\\1"
+                       _BerkeleyDB_version_patch "${_BerkeleyDB_version_strings}"
   )
   unset(_BerkeleyDB_version_strings)
   # The MAJOR.MINOR.PATCH version will be logged in the following find_package_handle_standard_args() command.
   set(_BerkeleyDB_full_version
       ${_BerkeleyDB_version_major}.${_BerkeleyDB_version_minor}.${_BerkeleyDB_version_patch}
   )
-  set(BerkeleyDB_VERSION
-      ${_BerkeleyDB_version_major}.${_BerkeleyDB_version_minor}
-  )
+  set(BerkeleyDB_VERSION ${_BerkeleyDB_version_major}.${_BerkeleyDB_version_minor})
   unset(_BerkeleyDB_version_major)
   unset(_BerkeleyDB_version_minor)
   unset(_BerkeleyDB_version_patch)
@@ -154,8 +133,7 @@ unset(_BerkeleyDB_full_version)
 if(BerkeleyDB_FOUND AND NOT TARGET BerkeleyDB::BerkeleyDB)
   add_library(BerkeleyDB::BerkeleyDB UNKNOWN IMPORTED)
   set_target_properties(
-    BerkeleyDB::BerkeleyDB PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
-                                      "${BerkeleyDB_INCLUDE_DIR}"
+    BerkeleyDB::BerkeleyDB PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${BerkeleyDB_INCLUDE_DIR}"
   )
   if(BerkeleyDB_LIBRARY_RELEASE)
     set_property(
@@ -164,8 +142,7 @@ if(BerkeleyDB_FOUND AND NOT TARGET BerkeleyDB::BerkeleyDB)
       PROPERTY IMPORTED_CONFIGURATIONS RELEASE
     )
     set_target_properties(
-      BerkeleyDB::BerkeleyDB PROPERTIES IMPORTED_LOCATION_RELEASE
-                                        "${BerkeleyDB_LIBRARY_RELEASE}"
+      BerkeleyDB::BerkeleyDB PROPERTIES IMPORTED_LOCATION_RELEASE "${BerkeleyDB_LIBRARY_RELEASE}"
     )
   endif()
   if(BerkeleyDB_LIBRARY_DEBUG)
@@ -175,8 +152,7 @@ if(BerkeleyDB_FOUND AND NOT TARGET BerkeleyDB::BerkeleyDB)
       PROPERTY IMPORTED_CONFIGURATIONS DEBUG
     )
     set_target_properties(
-      BerkeleyDB::BerkeleyDB PROPERTIES IMPORTED_LOCATION_DEBUG
-                                        "${BerkeleyDB_LIBRARY_DEBUG}"
+      BerkeleyDB::BerkeleyDB PROPERTIES IMPORTED_LOCATION_DEBUG "${BerkeleyDB_LIBRARY_DEBUG}"
     )
   endif()
 endif()

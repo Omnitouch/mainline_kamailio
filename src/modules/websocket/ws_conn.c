@@ -28,6 +28,7 @@
 
 #include "../../core/locking.h"
 #include "../../core/str.h"
+#include "../../core/ut.h"
 #include "../../core/tcp_conn.h"
 #include "../../core/fmsg.h"
 #include "../../core/counters.h"
@@ -219,7 +220,7 @@ int wsconn_add(struct receive_info *rcv, unsigned int sub_protocol)
 	wsconn_listadd(wsconn_id_hash[wsc->id_hash], wsc, id_next, id_prev);
 
 	/* Add to the end of the WebSocket used list */
-	wsc->last_used = (int)time(NULL);
+	wsc->last_used = ksr_time_sint(NULL, NULL);
 	if(wsconn_used_list->head == NULL)
 		wsconn_used_list->head = wsconn_used_list->tail = wsc;
 	else {
@@ -328,7 +329,8 @@ static void wsconn_dtor(ws_connection_t *wsc)
 	if(!wsc)
 		return;
 
-	LM_DBG("wsconn_dtor for [%p] refcnt [%d]\n", wsc, atomic_get(&wsc->refcnt));
+	LM_DBG("wsconn id: %d / %u [%p] refcnt [%d]\n", wsc->id, wsc->id_hash, wsc,
+			atomic_get(&wsc->refcnt));
 
 	if(wsc->run_event)
 		wsconn_run_route(wsc);
@@ -337,12 +339,13 @@ static void wsconn_dtor(ws_connection_t *wsc)
 
 	shm_free(wsc);
 
-	LM_DBG("wsconn_dtor for [%p] destroyed\n", wsc);
+	LM_DBG("wsconn id: %d / %u [%p] destroyed\n", wsc->id, wsc->id_hash, wsc);
 }
 
 int wsconn_rm(ws_connection_t *wsc, ws_conn_eventroute_t run_event_route)
 {
-	LM_DBG("wsconn_rm for [%p] refcnt [%d]\n", wsc, atomic_get(&wsc->refcnt));
+	LM_DBG("remove wscon id: %d / %u [%p] refcnt [%d]\n", wsc->id, wsc->id_hash,
+			wsc, atomic_get(&wsc->refcnt));
 
 	if(run_event_route == WSCONN_EVENTROUTE_YES)
 		wsc->run_event = 1;
@@ -358,7 +361,7 @@ int wsconn_update(ws_connection_t *wsc)
 	}
 
 	WSCONN_LOCK;
-	wsc->last_used = (int)time(NULL);
+	wsc->last_used = ksr_time_sint(NULL, NULL);
 	if(wsconn_used_list->tail == wsc)
 		/* Already at the end of the list */
 		goto end;
@@ -706,6 +709,7 @@ void ws_timer(unsigned int ticks, void *param)
 					LM_DBG("ws structure without active tcp connection\n");
 					wsc->state = WS_S_REMOVING;
 					wsc->rmticks = get_ticks();
+					wsc->run_event = 1;
 				} else {
 					tcpconn_put(con);
 				}
@@ -742,7 +746,7 @@ static int ws_rpc_add_node(
 
 		pong = wsc->awaiting_pong ? "awaiting Pong, " : "";
 
-		interval = (int)time(NULL) - wsc->last_used;
+		interval = ksr_time_sint(NULL, NULL) - wsc->last_used;
 		if(wsc->sub_protocol == SUB_PROTOCOL_SIP)
 			sub_protocol = "sip";
 		else if(wsc->sub_protocol == SUB_PROTOCOL_MSRP)

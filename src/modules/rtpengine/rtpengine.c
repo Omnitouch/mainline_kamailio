@@ -83,12 +83,14 @@
 #include "../../core/char_msg_val.h"
 #include "../../core/utils/srjson.h"
 #include "../../core/cfg/cfg_struct.h"
+#include "../../core/rand/fastrand.h"
 #include "../../modules/tm/tm_load.h"
 #include "../../modules/crypto/api.h"
 #include "../../modules/lwsc/api.h"
 #include "rtpengine.h"
 #include "rtpengine_funcs.h"
 #include "rtpengine_hash.h"
+#include "rtpengine_dmq.h"
 #include "bencode.h"
 #include "config.h"
 #include "api.h"
@@ -130,7 +132,7 @@ struct ng_flags_parse {
 	bencode_item_t *dict, *flags, *direction, *replace, *rtcp_mux, *sdes, *t38,
 			*received_from, *codec, *codec_strip, *codec_offer,
 			*codec_transcode, *codec_mask, *codec_set, *codec_except, *codec_accept,
-			*codec_consume;
+			*codec_consume, *from_tags;
 	str call_id, from_tag, to_tag;
 };
 
@@ -238,6 +240,17 @@ static int w_rtpengine_query_v(sip_msg_t *msg, char *pfmt, char *pvar);
 static int fixup_rtpengine_query_v(void **param, int param_no);
 static int fixup_free_rtpengine_query_v(void **param, int param_no);
 
+static int rtpengine_subscribe_request_wrap_f(struct sip_msg *msg, char *str1,
+		char *str2, char *str3, char *str4, char *str5);
+static int fixup_rtpengine_subscribe_request_v(void **param, int param_no);
+static int fixup_free_rtpengine_subscribe_request_v(void **param, int param_no);
+
+static int rtpengine_subscribe_answer_wrap_f(
+		struct sip_msg *msg, char *str1, char *str2);
+static int rtpengine_unsubscribe_wrap_f(
+		struct sip_msg *msg, char *str1, char *str2);
+
+
 static int parse_flags(struct ng_flags_parse *, struct sip_msg *,
 		enum rtpe_operation *, const char *);
 static int parse_viabranch_with_param(struct ng_flags_parse *ng_flags,
@@ -250,18 +263,26 @@ static int parse_from_to_tags(struct ng_flags_parse *ng_flags,
 
 static int bind_rtpengine(rtpengine_api_t *api);
 
+static void rtpengine_copy_streams_to_xavp(
+		str *stream_xavp, bencode_item_t *streams);
+static int rtpengine_subscribe_request_wrap(
+		struct sip_msg *msg, void *d, int more, enum rtpe_operation op);
+static int rtpengine_subscribe_answer_wrap(
+		struct sip_msg *msg, void *d, int more, enum rtpe_operation op);
+static int rtpengine_unsubscribe_wrap(
+		struct sip_msg *msg, void *d, int more, enum rtpe_operation op);
 static int rtpengine_offer_answer(
 		struct sip_msg *msg, void *d, enum rtpe_operation op, int more);
-static int ki_rtpengine_subscribe_request(struct rtpengine_session *sess,
+static int rtpengine_subscribe_request(struct rtpengine_session *sess,
 		str **to_tag, str *flags, unsigned int subscribe_flags, str *ret_body,
 		struct rtpengine_streams *ret_streams);
-static int ki_rtpengine_subscribe_answer(
+static int rtpengine_subscribe_answer(
 		struct rtpengine_session *sess, str *to_tag, str *flags, str *body);
-static int ki_rtpengine_unsubscribe(
+static int rtpengine_unsubscribe(
 		struct rtpengine_session *sess, str *to_tag, str *flags);
-static bencode_item_t *rtpengine_subscribe_wrap(struct rtpengine_session *sess,
-		enum rtpe_operation op, str *to_tag, str *flags,
-		unsigned int subscribe_flags, str *body);
+static bencode_item_t *w_rtpengine_subscribe_wrap(
+		struct rtpengine_session *sess, enum rtpe_operation op, str *to_tag,
+		str *flags, unsigned int subscribe_flags, str *body);
 static int fixup_set_id(void **param, int param_no);
 static int fixup_free_set_id(void **param, int param_no);
 static int set_rtpengine_set_f(struct sip_msg *msg, char *str1, char *str2);
@@ -307,11 +328,11 @@ static void parse_call_stats(bencode_item_t *, struct sip_msg *);
 static int control_cmd_tos = -1;
 static int rtpengine_allow_op = 0;
 static struct rtpp_node **queried_nodes_ptr = NULL;
-static pid_t mypid;
+
 static unsigned int myseqn = 0;
 static str extra_id_pv_param = {NULL, 0};
 static char *setid_avp_param = NULL;
-static int hash_table_tout = 3600;
+int hash_table_tout = 3600;
 static int hash_table_size = 256;
 static unsigned int setid_default = DEFAULT_RTPP_SET_ID;
 
@@ -362,6 +383,26 @@ static pv_spec_t *dtmf_event_timestamp_pvar = NULL;
 static str dtmf_event_pvar_str = {NULL, 0};
 static pv_spec_t *dtmf_event_pvar = NULL;
 
+static str dtmf_event_source_label_pvar_str = {NULL, 0};
+static pv_spec_t *dtmf_event_source_label_pvar = NULL;
+
+static str dtmf_event_tags_pvar_str = {NULL, 0};
+static pv_spec_t *dtmf_event_tags_pvar = NULL;
+
+static str dtmf_event_type_pvar_str = {NULL, 0};
+static pv_spec_t *dtmf_event_type_pvar = NULL;
+
+static str dtmf_event_source_ip_pvar_str = {NULL, 0};
+static pv_spec_t *dtmf_event_source_ip_pvar = NULL;
+
+static str dtmf_event_duration_pvar_str = {NULL, 0};
+static pv_spec_t *dtmf_event_duration_pvar = NULL;
+
+static str dtmf_event_volume_pvar_str = {NULL, 0};
+static pv_spec_t *dtmf_event_volume_pvar = NULL;
+
+static str rtpe_event_callback = STR_NULL;
+
 #define RTPENGINE_SESS_LIMIT_MSG "Parallel session limit reached"
 #define RTPENGINE_SESS_LIMIT_MSG_LEN (sizeof(RTPENGINE_SESS_LIMIT_MSG) - 1)
 
@@ -382,6 +423,7 @@ static int rtpengine_dtmf_event_fd;
 int dtmf_event_rt = -1; /* default disabled */
 static int rtpengine_ping_mode = 1;
 static int rtpengine_ping_interval = 60;
+static int rtpengine_enable_dmq = 0;
 
 /* clang-format off */
 typedef struct rtpp_set_link {
@@ -472,6 +514,11 @@ static cmd_export_t cmds[] = {
 		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
 	{"rtpengine_delete", (cmd_function)rtpengine_delete1_f, 2,
 		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
+	{"rtpengine_destroy", (cmd_function)rtpengine_delete1_f, 0, 0, 0, ANY_ROUTE},
+	{"rtpengine_destroy", (cmd_function)rtpengine_delete1_f, 1,
+		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"rtpengine_destroy", (cmd_function)rtpengine_delete1_f, 2,
+		fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{"rtpengine_query", (cmd_function)rtpengine_query1_f, 0, 0, 0, ANY_ROUTE},
 	{"rtpengine_query", (cmd_function)rtpengine_query1_f, 1,
 		fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
@@ -480,6 +527,18 @@ static cmd_export_t cmds[] = {
 	{"rtpengine_query_v", (cmd_function)w_rtpengine_query_v, 2,
 		fixup_rtpengine_query_v, fixup_free_rtpengine_query_v, ANY_ROUTE},
 	{"bind_rtpengine", (cmd_function)bind_rtpengine, 0, 0, 0, 0},
+	{"rtpengine_subscribe_request", (cmd_function)rtpengine_subscribe_request_wrap_f, 4,
+	fixup_rtpengine_subscribe_request_v, fixup_free_rtpengine_subscribe_request_v, ANY_ROUTE},
+	{"rtpengine_subscribe_request", (cmd_function)rtpengine_subscribe_request_wrap_f, 5,
+	fixup_rtpengine_subscribe_request_v, fixup_free_rtpengine_subscribe_request_v, ANY_ROUTE},
+	{"rtpengine_subscribe_answer", (cmd_function)rtpengine_subscribe_answer_wrap_f, 1,
+	fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"rtpengine_subscribe_answer", (cmd_function)rtpengine_subscribe_answer_wrap_f, 2,
+	fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
+	{"rtpengine_unsubscribe", (cmd_function)rtpengine_unsubscribe_wrap_f, 1,
+	fixup_spve_null, fixup_free_spve_null, ANY_ROUTE},
+	{"rtpengine_unsubscribe", (cmd_function)rtpengine_unsubscribe_wrap_f, 2,
+	fixup_spve_spve, fixup_free_spve_spve, ANY_ROUTE},
 	{0, 0, 0, 0, 0, 0}
 };
 
@@ -531,7 +590,14 @@ static param_export_t params[] = {
 	{"dtmf_event_source_tag", PARAM_STR, &dtmf_event_source_tag_pvar_str},
 	{"dtmf_event_timestamp", PARAM_STR, &dtmf_event_timestamp_pvar_str},
 	{"dtmf_event", PARAM_STR, &dtmf_event_pvar_str},
-
+	{"dtmf_event_source_label", PARAM_STR, &dtmf_event_source_label_pvar_str},
+	{"dtmf_event_tags", PARAM_STR, &dtmf_event_tags_pvar_str},
+	{"dtmf_event_type", PARAM_STR, &dtmf_event_type_pvar_str},
+	{"dtmf_event_source_ip", PARAM_STR, &dtmf_event_source_ip_pvar_str},
+	{"dtmf_event_duration", PARAM_STR, &dtmf_event_duration_pvar_str},
+	{"dtmf_event_volume", PARAM_STR, &dtmf_event_volume_pvar_str},
+	{"event_callback",  PARAM_STR, &rtpe_event_callback},
+	{"enable_dmq", PARAM_INT, &rtpengine_enable_dmq},
 	/* MOS stats output */
 	/* global averages */
 	{"mos_min_pv", PARAM_STR, &global_mos_stats.min.mos_param},
@@ -1077,7 +1143,7 @@ struct rtpp_node *get_rtpp_node(struct rtpp_set *rtpp_list, str *url)
  * @param set_id The ID of the RTP engine set to retrieve or create.
  * @return The RTP engine set with the specified ID, or NULL if creation fails due to memory issues.
  */
-struct rtpp_set *get_rtpp_set(unsigned int set_id)
+struct rtpp_set *get_rtpp_set(unsigned int set_id, unsigned int create_new)
 {
 	struct rtpp_set *rtpp_list;
 	unsigned int my_current_id = 0;
@@ -1090,7 +1156,8 @@ struct rtpp_set *get_rtpp_set(unsigned int set_id)
 	while(rtpp_list != 0 && rtpp_list->id_set != my_current_id)
 		rtpp_list = rtpp_list->rset_next;
 
-	if(rtpp_list == NULL) { /*if a new id_set : add a new set of rtpp*/
+	if(rtpp_list == NULL
+			&& create_new) { /*if a new id_set : add a new set of rtpp*/
 		rtpp_list = shm_malloc(sizeof(struct rtpp_set));
 		if(!rtpp_list) {
 			lock_release(rtpp_set_list->rset_head_lock);
@@ -1140,6 +1207,35 @@ struct rtpp_set *get_rtpp_set(unsigned int set_id)
 	lock_release(rtpp_set_list->rset_head_lock);
 
 	return rtpp_list;
+}
+
+int get_rtpp_set_id_by_node(struct rtpp_node *node)
+{
+	struct rtpp_set *rtpp_list;
+	struct rtpp_node *crt_rtpp;
+
+	lock_get(rtpp_set_list->rset_head_lock);
+	for(rtpp_list = rtpp_set_list->rset_first; rtpp_list != NULL;
+			rtpp_list = rtpp_list->rset_next) {
+
+		lock_get(rtpp_list->rset_lock);
+		for(crt_rtpp = rtpp_list->rn_first; crt_rtpp != NULL;
+				crt_rtpp = crt_rtpp->rn_next) {
+
+			if(crt_rtpp->idx == node->idx) {
+				break;
+			}
+		}
+		lock_release(rtpp_list->rset_lock);
+		if(crt_rtpp != NULL)
+			break;
+	}
+	lock_release(rtpp_set_list->rset_head_lock);
+
+	if(crt_rtpp != NULL)
+		return rtpp_list->id_set;
+	else
+		return 0;
 }
 
 /**
@@ -1409,7 +1505,7 @@ static int rtpengine_add_rtpengine_set(char *rtp_proxies, unsigned int weight,
 	}
 
 	/*search for the current_id*/
-	rtpp_list = get_rtpp_set(my_current_id);
+	rtpp_list = get_rtpp_set(my_current_id, 1);
 
 	if(rtpp_list != NULL) {
 
@@ -1527,9 +1623,11 @@ static void rtpengine_dtmf_events_loop(void)
 			goto end;
 		}
 
-		if(dtmf_event_rt == -1) {
-			LM_NOTICE("nothing to do - nobody is listening!\n");
-			goto end;
+		if(rtpe_event_callback.s == NULL || rtpe_event_callback.len <= 0) {
+			if(dtmf_event_rt == -1) {
+				LM_NOTICE("nothing to do - nobody is listening!\n");
+				goto end;
+			}
 		}
 
 		p = shm_malloc(ret + 1);
@@ -1560,6 +1658,8 @@ static int rtpengine_raise_dtmf_event(char *buffer, int len)
 	struct sip_msg *fmsg = NULL;
 	struct run_act_ctx ctx;
 	int rtb;
+
+	sr_kemi_eng_t *keng = NULL;
 
 	LM_DBG("executing event_route[rtpengine:dtmf-event] (%d)\n", dtmf_event_rt);
 	LM_DBG("dispatching buffer: %s\n", buffer);
@@ -1648,14 +1748,162 @@ static int rtpengine_raise_dtmf_event(char *buffer, int len)
 						dtmf_event_pvar_str.s);
 				goto error;
 			}
+		} else if(strcmp(it->string, "source_label") == 0) {
+			pv_value_t pv_val;
+			pv_val.rs.s = it->valuestring;
+			pv_val.rs.len = strlen(it->valuestring);
+			pv_val.flags = PV_VAL_STR;
+
+			if(dtmf_event_source_label_pvar->setf(0,
+					   &dtmf_event_source_label_pvar->pvp, (int)EQ_T, &pv_val)
+					< 0) {
+				LM_ERR("error setting pvar <%.*s>\n",
+						dtmf_event_source_label_pvar_str.len,
+						dtmf_event_source_label_pvar_str.s);
+				goto error;
+			}
+		} else if(strcmp(it->string, "tags") == 0) {
+			pv_value_t pv_val;
+			srjson_t *tag;
+			char *tags_str = NULL;
+			int tags_len = 0;
+			int first = 1;
+
+			/* Calculate total length needed for all tags */
+			for(tag = it->child; tag; tag = tag->next) {
+				if(!first) {
+					tags_len += 1; /* For comma */
+				}
+				tags_len += strlen(tag->valuestring);
+				first = 0;
+			}
+
+			if(tags_len > 0) {
+				tags_str = pkg_malloc(tags_len + 1);
+				if(!tags_str) {
+					LM_ERR("no more pkg memory\n");
+					goto error;
+				}
+				tags_str[0] = '\0';
+				first = 1;
+
+				/* Concatenate all tags with commas */
+				for(tag = it->child; tag; tag = tag->next) {
+					if(!first) {
+						strcat(tags_str, ",");
+					}
+					strcat(tags_str, tag->valuestring);
+					first = 0;
+				}
+
+				pv_val.rs.s = tags_str;
+				pv_val.rs.len = tags_len;
+				pv_val.flags = PV_VAL_STR;
+
+				if(dtmf_event_tags_pvar->setf(
+						   0, &dtmf_event_tags_pvar->pvp, (int)EQ_T, &pv_val)
+						< 0) {
+					LM_ERR("error setting pvar <%.*s>\n",
+							dtmf_event_tags_pvar_str.len,
+							dtmf_event_tags_pvar_str.s);
+					pkg_free(tags_str);
+					goto error;
+				}
+				pkg_free(tags_str);
+			}
+		} else if(strcmp(it->string, "type") == 0) {
+			pv_value_t pv_val;
+			int_str val = {0};
+			char intbuf[32];
+			snprintf(intbuf, sizeof(intbuf), "%lld", SRJSON_GET_LLONG(it));
+			memset(&val, 0, sizeof(val));
+
+			pv_val.rs.s = intbuf;
+			pv_val.rs.len = strlen(intbuf);
+			pv_val.flags = PV_VAL_STR;
+
+			if(dtmf_event_type_pvar->setf(
+					   0, &dtmf_event_type_pvar->pvp, (int)EQ_T, &pv_val)
+					< 0) {
+				LM_ERR("error setting pvar <%.*s>\n",
+						dtmf_event_type_pvar_str.len,
+						dtmf_event_type_pvar_str.s);
+				goto error;
+			}
+		} else if(strcmp(it->string, "source_ip") == 0) {
+			pv_value_t pv_val;
+			pv_val.rs.s = it->valuestring;
+			pv_val.rs.len = strlen(it->valuestring);
+			pv_val.flags = PV_VAL_STR;
+
+			if(dtmf_event_source_ip_pvar->setf(
+					   0, &dtmf_event_source_ip_pvar->pvp, (int)EQ_T, &pv_val)
+					< 0) {
+				LM_ERR("error setting pvar <%.*s>\n",
+						dtmf_event_source_ip_pvar_str.len,
+						dtmf_event_source_ip_pvar_str.s);
+				goto error;
+			}
+		} else if(strcmp(it->string, "duration") == 0) {
+			pv_value_t pv_val;
+			int_str val = {0};
+			char intbuf[32];
+			snprintf(intbuf, sizeof(intbuf), "%lld", SRJSON_GET_LLONG(it));
+			memset(&val, 0, sizeof(val));
+
+			pv_val.rs.s = intbuf;
+			pv_val.rs.len = strlen(intbuf);
+			pv_val.flags = PV_VAL_STR;
+
+			if(dtmf_event_duration_pvar->setf(
+					   0, &dtmf_event_duration_pvar->pvp, (int)EQ_T, &pv_val)
+					< 0) {
+				LM_ERR("error setting pvar <%.*s>\n",
+						dtmf_event_duration_pvar_str.len,
+						dtmf_event_duration_pvar_str.s);
+				goto error;
+			}
+		} else if(strcmp(it->string, "volume") == 0) {
+			pv_value_t pv_val;
+			int_str val = {0};
+			char intbuf[32];
+			snprintf(intbuf, sizeof(intbuf), "%lld", SRJSON_GET_LLONG(it));
+			memset(&val, 0, sizeof(val));
+
+			pv_val.rs.s = intbuf;
+			pv_val.rs.len = strlen(intbuf);
+			pv_val.flags = PV_VAL_STR;
+
+			if(dtmf_event_volume_pvar->setf(
+					   0, &dtmf_event_volume_pvar->pvp, (int)EQ_T, &pv_val)
+					< 0) {
+				LM_ERR("error setting pvar <%.*s>\n",
+						dtmf_event_volume_pvar_str.len,
+						dtmf_event_volume_pvar_str.s);
+				goto error;
+			}
 		}
 	}
 
 	fmsg = faked_msg_next();
 	rtb = get_route_type();
+	str evname = str_init("rtpengine:dtmf-event");
 	set_route_type(REQUEST_ROUTE);
 	init_run_actions_ctx(&ctx);
-	run_top_route(event_rt.rlist[dtmf_event_rt], fmsg, &ctx);
+	if(rtpe_event_callback.s == NULL || rtpe_event_callback.len <= 0) {
+		run_top_route(event_rt.rlist[dtmf_event_rt], fmsg, &ctx);
+	} else {
+		keng = sr_kemi_eng_get();
+		if(keng != NULL) {
+			if(sr_kemi_route(
+					   keng, fmsg, REQUEST_ROUTE, &rtpe_event_callback, &evname)
+					< 0) {
+				LM_ERR("error running event route kemi callback\n");
+			}
+		} else {
+			LM_ERR("no event route or kemi callback found for execution\n");
+		}
+	}
 	set_route_type(rtb);
 	if(ctx.run_flags & DROP_R_F) {
 		LM_ERR("exit due to 'drop' in event route\n");
@@ -1744,6 +1992,7 @@ static int rtpp_test_ping(struct rtpp_node *node)
 	char *cp;
 	int ret;
 
+	LM_DBG("Sending ping to node %.*s\n", node->rn_url.len, node->rn_url.s);
 	if(bencode_buffer_init(&bencbuf)) {
 		return -1;
 	}
@@ -2365,67 +2614,152 @@ static int mod_init(void)
 	}
 
 	dtmf_event_rt = route_lookup(&event_rt, "rtpengine:dtmf-event");
-	if(dtmf_event_rt >= 0 && event_rt.rlist[dtmf_event_rt] == 0) {
-		dtmf_event_rt = -1; /* disable */
-	} else {
-		if(dtmf_event_callid_pvar_str.len > 0) {
-			dtmf_event_callid_pvar = pv_cache_get(&dtmf_event_callid_pvar_str);
-			if(dtmf_event_callid_pvar == NULL
-					|| (dtmf_event_callid_pvar->type != PVT_AVP
-							&& dtmf_event_callid_pvar->type != PVT_SCRIPTVAR)) {
-				LM_ERR("dtmf_event_callid_pv: not a valid AVP or VAR "
-					   "definition <%.*s>\n",
-						dtmf_event_callid_pvar_str.len,
-						dtmf_event_callid_pvar_str.s);
-				return -1;
-			}
-		}
 
-		if(dtmf_event_source_tag_pvar_str.len > 0) {
-			dtmf_event_source_tag_pvar =
-					pv_cache_get(&dtmf_event_source_tag_pvar_str);
-			if(dtmf_event_source_tag_pvar == NULL
-					|| (dtmf_event_source_tag_pvar->type != PVT_AVP
-							&& dtmf_event_source_tag_pvar->type
-									   != PVT_SCRIPTVAR)) {
-				LM_ERR("dtmf_event_source_tag_pv: not a valid AVP or VAR "
-					   "definition <%.*s>\n",
-						dtmf_event_source_tag_pvar_str.len,
-						dtmf_event_source_tag_pvar_str.s);
-				return -1;
-			}
+	if(rtpe_event_callback.s == NULL || rtpe_event_callback.len <= 0) {
+		if(dtmf_event_rt >= 0 && event_rt.rlist[dtmf_event_rt] == 0) {
+			dtmf_event_rt = -1; /* disable */
+			return 0;
 		}
+	}
 
-		if(dtmf_event_timestamp_pvar_str.len > 0) {
-			dtmf_event_timestamp_pvar =
-					pv_cache_get(&dtmf_event_timestamp_pvar_str);
-			if(dtmf_event_timestamp_pvar == NULL
-					|| (dtmf_event_timestamp_pvar->type != PVT_AVP
-							&& dtmf_event_timestamp_pvar->type
-									   != PVT_SCRIPTVAR)) {
-				LM_ERR("dtmf_event_timestamp_pv: not a valid AVP or VAR "
-					   "definition <%.*s>\n",
-						dtmf_event_timestamp_pvar_str.len,
-						dtmf_event_timestamp_pvar_str.s);
-				return -1;
-			}
+	if(dtmf_event_callid_pvar_str.len > 0) {
+		dtmf_event_callid_pvar = pv_cache_get(&dtmf_event_callid_pvar_str);
+		if(dtmf_event_callid_pvar == NULL
+				|| (dtmf_event_callid_pvar->type != PVT_AVP
+						&& dtmf_event_callid_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_callid_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_callid_pvar_str.len,
+					dtmf_event_callid_pvar_str.s);
+			return -1;
 		}
+	}
 
-		if(dtmf_event_pvar_str.len > 0) {
-			dtmf_event_pvar = pv_cache_get(&dtmf_event_pvar_str);
-			if(dtmf_event_pvar == NULL
-					|| (dtmf_event_pvar->type != PVT_AVP
-							&& dtmf_event_pvar->type != PVT_SCRIPTVAR)) {
-				LM_ERR("event_pv: not a valid AVP or VAR definition <%.*s>\n",
-						dtmf_event_pvar_str.len, dtmf_event_pvar_str.s);
-				return -1;
-			}
+	if(dtmf_event_source_tag_pvar_str.len > 0) {
+		dtmf_event_source_tag_pvar =
+				pv_cache_get(&dtmf_event_source_tag_pvar_str);
+		if(dtmf_event_source_tag_pvar == NULL
+				|| (dtmf_event_source_tag_pvar->type != PVT_AVP
+						&& dtmf_event_source_tag_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_source_tag_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_source_tag_pvar_str.len,
+					dtmf_event_source_tag_pvar_str.s);
+			return -1;
 		}
+	}
 
-		if(rtpengine_dtmf_event_sock.len > 0) {
-			register_procs(1);
-			cfg_register_child(1);
+	if(dtmf_event_timestamp_pvar_str.len > 0) {
+		dtmf_event_timestamp_pvar =
+				pv_cache_get(&dtmf_event_timestamp_pvar_str);
+		if(dtmf_event_timestamp_pvar == NULL
+				|| (dtmf_event_timestamp_pvar->type != PVT_AVP
+						&& dtmf_event_timestamp_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_timestamp_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_timestamp_pvar_str.len,
+					dtmf_event_timestamp_pvar_str.s);
+			return -1;
 		}
+	}
+
+	if(dtmf_event_pvar_str.len > 0) {
+		dtmf_event_pvar = pv_cache_get(&dtmf_event_pvar_str);
+		if(dtmf_event_pvar == NULL
+				|| (dtmf_event_pvar->type != PVT_AVP
+						&& dtmf_event_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("event_pv: not a valid AVP or VAR definition <%.*s>\n",
+					dtmf_event_pvar_str.len, dtmf_event_pvar_str.s);
+			return -1;
+		}
+	}
+	if(dtmf_event_source_label_pvar_str.len > 0) {
+		dtmf_event_source_label_pvar =
+				pv_cache_get(&dtmf_event_source_label_pvar_str);
+		if(dtmf_event_source_label_pvar == NULL
+				|| (dtmf_event_source_label_pvar->type != PVT_AVP
+						&& dtmf_event_source_label_pvar->type
+								   != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_source_label_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_source_label_pvar_str.len,
+					dtmf_event_source_label_pvar_str.s);
+			return -1;
+		}
+	}
+
+	if(dtmf_event_tags_pvar_str.len > 0) {
+		dtmf_event_tags_pvar = pv_cache_get(&dtmf_event_tags_pvar_str);
+		if(dtmf_event_tags_pvar == NULL
+				|| (dtmf_event_tags_pvar->type != PVT_AVP
+						&& dtmf_event_tags_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_tags_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_tags_pvar_str.len, dtmf_event_tags_pvar_str.s);
+			return -1;
+		}
+	}
+
+	if(dtmf_event_type_pvar_str.len > 0) {
+		dtmf_event_type_pvar = pv_cache_get(&dtmf_event_type_pvar_str);
+		if(dtmf_event_type_pvar == NULL
+				|| (dtmf_event_type_pvar->type != PVT_AVP
+						&& dtmf_event_type_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_type_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_type_pvar_str.len, dtmf_event_type_pvar_str.s);
+			return -1;
+		}
+	}
+
+	if(dtmf_event_source_ip_pvar_str.len > 0) {
+		dtmf_event_source_ip_pvar =
+				pv_cache_get(&dtmf_event_source_ip_pvar_str);
+		if(dtmf_event_source_ip_pvar == NULL
+				|| (dtmf_event_source_ip_pvar->type != PVT_AVP
+						&& dtmf_event_source_ip_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_source_ip_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_source_ip_pvar_str.len,
+					dtmf_event_source_ip_pvar_str.s);
+			return -1;
+		}
+	}
+
+	if(dtmf_event_duration_pvar_str.len > 0) {
+		dtmf_event_duration_pvar = pv_cache_get(&dtmf_event_duration_pvar_str);
+		if(dtmf_event_duration_pvar == NULL
+				|| (dtmf_event_duration_pvar->type != PVT_AVP
+						&& dtmf_event_duration_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_duration_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_duration_pvar_str.len,
+					dtmf_event_duration_pvar_str.s);
+			return -1;
+		}
+	}
+
+	if(dtmf_event_volume_pvar_str.len > 0) {
+		dtmf_event_volume_pvar = pv_cache_get(&dtmf_event_volume_pvar_str);
+		if(dtmf_event_volume_pvar == NULL
+				|| (dtmf_event_volume_pvar->type != PVT_AVP
+						&& dtmf_event_volume_pvar->type != PVT_SCRIPTVAR)) {
+			LM_ERR("dtmf_event_volume_pv: not a valid AVP or VAR "
+				   "definition <%.*s>\n",
+					dtmf_event_volume_pvar_str.len,
+					dtmf_event_volume_pvar_str.s);
+			return -1;
+		}
+	}
+
+	if(rtpengine_dtmf_event_sock.len > 0) {
+		register_procs(1);
+		cfg_register_child(1);
+	}
+
+	if(rtpengine_enable_dmq > 0 && rtpengine_dmq_init() != 0) {
+		LM_ERR("rtpengine_dmq_init() failed!\n");
+		return -1;
 	}
 
 	return 0;
@@ -2700,6 +3034,8 @@ static int mos_label_stats_parse(struct minmax_mos_label_stats *mmls)
 
 static int child_init(int rank)
 {
+	pid_t mypid = 0;
+
 	if(!rtpp_set_list)
 		return 0;
 
@@ -2710,7 +3046,7 @@ static int child_init(int rank)
 
 	if(rank == PROC_MAIN) {
 		if(rtpengine_dtmf_event_sock.len > 0) {
-			LM_DBG("Register RTPENGINE DTMF WORKER %d\n", mypid);
+			LM_DBG("Register RTPENGINE DTMF WORKER %d\n", getpid());
 			/* fork worker process */
 			mypid = fork_process(PROC_RPC, "RTPENGINE DTMF WORKER", 1);
 			if(mypid < 0) {
@@ -2732,7 +3068,8 @@ static int child_init(int rank)
 			return 0;
 	}
 
-	mypid = getpid();
+	/* random start value for for cookie sequence number */
+	myseqn = fastrand();
 
 	// vector of pointers to queried nodes
 	queried_nodes_ptr = (struct rtpp_node **)pkg_malloc(
@@ -2841,9 +3178,10 @@ static void mod_destroy(void)
 
 static char *gencookie(void)
 {
-	static char cook[34];
+	static char cook[35]; // 11 + 1 + 10 + 1 + 10 + 1 + 1
 
-	snprintf(cook, 34, "%d_%d_%u ", server_id, (int)mypid, myseqn);
+	snprintf(cook, 35, "%" PRId32 "_%" PRIu32 "_%" PRIu32 " ",
+			(int32_t) server_id, (uint32_t) fastrand(), (uint32_t) myseqn);
 	myseqn++;
 	return cook;
 }
@@ -2982,10 +3320,27 @@ static int parse_from_to_tags(struct ng_flags_parse *ng_flags,
 				bencode_dictionary_add_str(
 						ng_flags->dict, "to-tag", &ng_flags->to_tag);
 		}
-	} else if(op == OP_SUBSCRIBE_REQUEST || op == OP_UNSUBSCRIBE) {
-		bencode_dictionary_add_str(
-				ng_flags->dict, "from-tag", &ng_flags->from_tag);
-		return 0;
+	} else if(op == OP_SUBSCRIBE_REQUEST) {
+		/* SUBSCRIBE can either specify a list of from tags or have the keyword
+		 * all
+		 * */
+		if(ng_flags->from_tags)
+			bencode_dictionary_add(
+					ng_flags->dict, "from-tags", ng_flags->from_tags);
+		/* SUBSCRIBE can specify a to tag, if none specified a to-tag gets auto
+		 * generated
+		 * */
+		if(ng_flags->to && ng_flags->to_tag.s && ng_flags->to_tag.len)
+			bencode_dictionary_add_str(
+					ng_flags->dict, "to-tag", &ng_flags->to_tag);
+	} else if(op == OP_SUBSCRIBE_ANSWER || op == OP_UNSUBSCRIBE) {
+		/* SUBSCRIBE answer and UNSUBSCRIBE should specify the tag matching the
+		 * original subscribe request.  Internal api passes it via extra_dict
+		 * so this can be missing from flags in that case
+		 */
+		if(ng_flags->to && ng_flags->to_tag.s && ng_flags->to_tag.len)
+			bencode_dictionary_add_str(
+					ng_flags->dict, "to-tag", &ng_flags->to_tag);
 	} else if((msg->first_line.type == SIP_REQUEST && op != OP_ANSWER)
 			  || (msg->first_line.type == SIP_REPLY && op == OP_DELETE)
 			  || (msg->first_line.type == SIP_REPLY && op == OP_ANSWER)
@@ -3118,10 +3473,10 @@ static int parse_flags(struct ng_flags_parse *ng_flags, struct sip_msg *msg,
 				} else if(str_eq(&key, "AVP") && !val.s) {
 					ng_flags->transport |= 0x100;
 					ng_flags->transport &= ~0x002;
-				} else if(str_eq(&key, "TOS") && val.s)
+				} else if(str_eq(&key, "TOS") && val.s) {
 					bencode_dictionary_add_integer(
 							ng_flags->dict, "TOS", atoi(val.s));
-				else
+				} else
 					goto generic;
 				goto next;
 				break;
@@ -3183,7 +3538,17 @@ static int parse_flags(struct ng_flags_parse *ng_flags, struct sip_msg *msg,
 					ng_flags->transport = 0x103;
 				else if(str_eq(&key, "direction"))
 					bencode_list_add_str(ng_flags->direction, &val);
-				else
+				else if(str_eq(&key, "from-tags")) {
+					err = "missing value";
+					if(!val.s)
+						goto error;
+
+					if(!ng_flags->from_tags) {
+						ng_flags->from_tags =
+								bencode_list(ng_flags->dict->buffer);
+					}
+					bencode_list_add_str(ng_flags->from_tags, &val);
+				} else
 					goto generic;
 				goto next;
 				break;
@@ -3268,9 +3633,10 @@ static int parse_flags(struct ng_flags_parse *ng_flags, struct sip_msg *msg,
 		}
 
 	generic:
-		if(!val.s)
+		if(!val.s) {
+			LM_DBG("Setting flag %.*s\n", key.len, key.s);
 			bencode_list_add_str(ng_flags->flags, &key);
-		else
+		} else
 			bencode_dictionary_str_add_str(ng_flags->dict, &key, &val);
 		goto next;
 
@@ -3305,7 +3671,7 @@ static bencode_item_t *rtpp_function_call(bencode_buffer_t *bencbuf,
 	bencode_item_t *result;
 	pv_value_t pv_val;
 	str viabranch = STR_NULL;
-	str body = STR_NULL, error = STR_NULL;
+	str body = STR_NULL, error = STR_NULL, tmp_callid = STR_NULL;
 	int ret, queried_nodes = 0, cont_type = 0;
 	unsigned int parse_by_module = (p_viabranch) ? 0 : 1;
 	struct rtpp_node *node;
@@ -3349,7 +3715,10 @@ static bencode_item_t *rtpp_function_call(bencode_buffer_t *bencbuf,
 	} else {
 		ng_flags.dict = extra_dict;
 		ng_flags.flags = bencode_dictionary_get(ng_flags.dict, "flags");
-		bencode_dictionary_get_str(ng_flags.dict, "call-id", &ng_flags.call_id);
+		bencode_dictionary_get_str(ng_flags.dict, "call-id", &tmp_callid);
+		if(tmp_callid.len > 0) {
+			ng_flags.call_id = tmp_callid;
+		}
 	}
 
 	if(parse_by_module) {
@@ -3361,7 +3730,6 @@ static bencode_item_t *rtpp_function_call(bencode_buffer_t *bencbuf,
 
 	/* offer/asnwer specific things */
 	if(op == OP_OFFER || op == OP_ANSWER) {
-
 		/* create these bencode items only if parsing is local */
 		if(parse_by_module && flags) {
 			ng_flags.direction = bencode_list(bencbuf);
@@ -3371,28 +3739,27 @@ static bencode_item_t *rtpp_function_call(bencode_buffer_t *bencbuf,
 			ng_flags.t38 = bencode_list(bencbuf);
 			ng_flags.codec = bencode_dictionary(bencbuf);
 		}
-
+	}
+	if(op == OP_OFFER || op == OP_ANSWER || op == OP_SUBSCRIBE_ANSWER) {
 		/* get SDP body */
-		{
-			if(read_sdp_pvar != NULL) {
-				if(read_sdp_pvar->getf(msg, &read_sdp_pvar->pvp, &pv_val) < 0) {
-					LM_ERR("error getting pvar value <%.*s>\n",
-							read_sdp_pvar_str.len, read_sdp_pvar_str.s);
-					goto error;
-				} else {
-					body = pv_val.rs;
-				}
-
-			} else if((cont_type = extract_body(msg, &body, cl_field)) == -1) {
-				LM_ERR("can't extract body from the message\n");
+		if(read_sdp_pvar != NULL) {
+			if(read_sdp_pvar->getf(msg, &read_sdp_pvar->pvp, &pv_val) < 0) {
+				LM_ERR("error getting pvar value <%.*s>\n",
+						read_sdp_pvar_str.len, read_sdp_pvar_str.s);
 				goto error;
+			} else {
+				body = pv_val.rs;
 			}
-			if(body_intermediate.s)
-				bencode_dictionary_add_str(
-						ng_flags.dict, "sdp", &body_intermediate);
-			else
-				bencode_dictionary_add_str(ng_flags.dict, "sdp", &body);
+
+		} else if((cont_type = extract_body(msg, &body, cl_field)) == -1) {
+			LM_ERR("can't extract body from the message\n");
+			goto error;
 		}
+		if(body_intermediate.s)
+			bencode_dictionary_add_str(
+					ng_flags.dict, "sdp", &body_intermediate);
+		else
+			bencode_dictionary_add_str(ng_flags.dict, "sdp", &body);
 	}
 
 	/**
@@ -3400,7 +3767,10 @@ static bencode_item_t *rtpp_function_call(bencode_buffer_t *bencbuf,
 	 */
 
 	/* affects to-tag parsing */
-	ng_flags.to = (!parse_by_module || op != OP_DELETE) ? 1 : 0;
+	ng_flags.to = (!parse_by_module
+						  || (op != OP_DELETE && op != OP_SUBSCRIBE_REQUEST))
+						  ? 1
+						  : 0;
 
 	/* module specific parsing */
 	if(parse_by_module && flags && parse_flags(&ng_flags, msg, &op, flags->s))
@@ -3663,6 +4033,9 @@ select_node:
 					node->rn_url.len, node->rn_url.s, ng_flags.call_id.len,
 					ng_flags.call_id.len, ng_flags.call_id.s, viabranch.len,
 					viabranch.s);
+			if(rtpengine_enable_dmq > 0)
+				rtpengine_dmq_replicate_insert(
+						ng_flags.call_id, viabranch, entry);
 		}
 	}
 
@@ -3682,6 +4055,8 @@ skip_hash_table_insert:
 				   "callid=%.*s viabranch=%.*s\n",
 					ng_flags.call_id.len, ng_flags.call_id.len,
 					ng_flags.call_id.s, viabranch.len, viabranch.s);
+			if(rtpengine_enable_dmq > 0)
+				rtpengine_dmq_replicate_remove(ng_flags.call_id, viabranch);
 		}
 	}
 
@@ -3754,43 +4129,132 @@ static bencode_item_t *rtpp_function_call_ok(bencode_buffer_t *bencbuf,
  */
 static void rtpengine_ping_check_timer(unsigned int ticks, void *param)
 {
-	struct rtpp_set *rtpp_list;
-	struct rtpp_node *crt_rtpp;
-	int err = 0;
-	int ret;
+	struct rtpp_set *rtpp_list = NULL;
+	struct rtpp_node *crt_rtpp = NULL;
+	struct rtpp_node *nodes;
+	int idx = 0;
+	int total_nodes = 0;
 	int rtpp_disabled = 0;
 
 	/* No need to test them while building */
 	if(build_rtpp_socks(1, 0)) {
+		LM_WARN("Skip timer ping. Failed to build sockets!\n");
 		return;
 	}
-	/* Most of this is from rtpengine_rpc_iterate functions maybe split? */
-	LM_DBG("Pinging all enabled rtpengines...\n");
+
+	/* Alloc local copy of nodes, no locks */
+	lock_get(rtpp_no_lock);
+	total_nodes = *rtpp_no;
+	lock_release(rtpp_no_lock);
+
+	LM_DBG("Alloc %d nodes to pkg...\n", total_nodes);
+	nodes = (struct rtpp_node *)pkg_malloc(
+			sizeof(struct rtpp_node) * total_nodes);
+
+	/* Is pkg available? */
+	if(!nodes) {
+		LM_WARN("Skip timer ping. Not enough pkg for nodes!\n");
+		return;
+	}
+	memset(nodes, 0, sizeof(struct rtpp_node) * total_nodes);
+
+	/* Make a local copy of nodes, under locks */
+	LM_DBG("Copy %d nodes to pkg...\n", total_nodes);
 	lock_get(rtpp_set_list->rset_head_lock);
 	for(rtpp_list = rtpp_set_list->rset_first; rtpp_list != NULL;
 			rtpp_list = rtpp_list->rset_next) {
+		lock_get(rtpp_list->rset_lock);
+		for(crt_rtpp = rtpp_list->rn_first, idx = 0;
+				crt_rtpp != NULL && idx < total_nodes;
+				crt_rtpp = crt_rtpp->rn_next, idx++) {
+			nodes[idx] = *crt_rtpp;
+			nodes[idx].rn_address = (char *)pkg_malloc(
+					sizeof(char) * (strlen(crt_rtpp->rn_address) + 1));
+			nodes[idx].rn_url.s = (char *)pkg_malloc(
+					sizeof(char) * (strlen(crt_rtpp->rn_url.s) + 1));
 
+			/* Is pkg available? */
+			if(!nodes[idx].rn_address || !nodes[idx].rn_url.s) {
+				LM_WARN("Skip timer ping. Not enough pkg for node url or "
+						"address!\n");
+				lock_release(rtpp_list->rset_lock);
+				lock_release(rtpp_set_list->rset_head_lock);
+				goto free_nodes;
+			}
+			strcpy(nodes[idx].rn_address, crt_rtpp->rn_address);
+			strcpy(nodes[idx].rn_url.s, crt_rtpp->rn_url.s);
+		}
+		lock_release(rtpp_list->rset_lock);
+	}
+	lock_release(rtpp_set_list->rset_head_lock);
+
+	/* Ping the nodes, no locks */
+	LM_DBG("Ping nodes...\n");
+	for(idx = 0; idx < total_nodes; idx++) {
+		/* Skip not needed node */
+		if(!nodes[idx].rn_displayed
+				|| (nodes[idx].rn_disabled
+						&& nodes[idx].rn_recheck_ticks
+								   == RTPENGINE_MAX_RECHECK_TICKS)) {
+			continue;
+		}
+
+		/* Ping node */
+		LM_DBG("Ping node %s\n", nodes[idx].rn_url.s);
+		crt_rtpp = &nodes[idx];
+		rtpengine_iter_cb_ping(crt_rtpp, rtpp_list, &rtpp_disabled);
+	}
+
+	/* Update nodes, under locks */
+	LM_DBG("Update nodes...\n");
+	lock_get(rtpp_set_list->rset_head_lock);
+	for(rtpp_list = rtpp_set_list->rset_first; rtpp_list != NULL;
+			rtpp_list = rtpp_list->rset_next) {
 		lock_get(rtpp_list->rset_lock);
 		for(crt_rtpp = rtpp_list->rn_first; crt_rtpp != NULL;
 				crt_rtpp = crt_rtpp->rn_next) {
-
-			if(!crt_rtpp->rn_displayed) {
+			/* Skip not needed node */
+			if(!crt_rtpp->rn_displayed
+					|| (crt_rtpp->rn_disabled
+							&& crt_rtpp->rn_recheck_ticks
+									   == RTPENGINE_MAX_RECHECK_TICKS)) {
 				continue;
 			}
 
-			/* Ping all available nodes */
-			ret = rtpengine_iter_cb_ping(crt_rtpp, rtpp_list, &rtpp_disabled);
-			if(ret) {
-				err = 1;
-				break;
+			for(idx = 0; idx < total_nodes; idx++) {
+				/* Skip not needed node */
+				if(!nodes[idx].rn_displayed
+						|| (nodes[idx].rn_disabled
+								&& nodes[idx].rn_recheck_ticks
+										   == RTPENGINE_MAX_RECHECK_TICKS)) {
+					continue;
+				}
+
+				/* Update node if url match */
+				if(strcmp(crt_rtpp->rn_url.s, nodes[idx].rn_url.s) == 0) {
+					LM_DBG("Update node %s, disabled=%d\n", nodes[idx].rn_url.s,
+							nodes[idx].rn_disabled);
+					crt_rtpp->rn_recheck_ticks = nodes[idx].rn_recheck_ticks;
+					crt_rtpp->rn_disabled = nodes[idx].rn_disabled;
+				}
 			}
 		}
 		lock_release(rtpp_list->rset_lock);
-
-		if(err)
-			break;
 	}
 	lock_release(rtpp_set_list->rset_head_lock);
+
+free_nodes:
+	/* Free local copy of nodes, no locks */
+	LM_DBG("Free %d nodes from pkg...\n", total_nodes);
+	for(idx = 0; idx < total_nodes; idx++) {
+		if(nodes[idx].rn_address) {
+			pkg_free(nodes[idx].rn_address);
+		}
+		if(nodes[idx].rn_url.s) {
+			pkg_free(nodes[idx].rn_url.s);
+		}
+	}
+	pkg_free(nodes);
 }
 
 /**
@@ -4487,7 +4951,8 @@ static void parse_call_stats_1(struct minmax_mos_label_stats *mmls,
 	long long ssrc;
 	char *endp;
 	bencode_item_t *ssrc_list, *ssrc_key, *ssrc_dict, *tags, *tag_key,
-			*tag_dict, *medias, *media, *streams, *stream;
+			*tag_dict, *medias, *media, *streams, *stream, *ingress_ssrcs,
+			*ingress_ssrc;
 	struct minmax_stats_vals min_vals = {.mos = 100}, max_vals = {.mos = -1},
 							 average_vals = {.avg_samples = 0}, vals_decoded;
 
@@ -4542,9 +5007,21 @@ static void parse_call_stats_1(struct minmax_mos_label_stats *mmls,
 					(char *)stream->child->iov[1].iov_base);
 			LM_DBG("rtpengine: XXX stream child val type %i\n",
 					stream->child->sibling->type);
-			if((ssrc = bencode_dictionary_get_integer(stream, "SSRC", -1))
-					== -1)
-				continue;
+			ssrc = bencode_dictionary_get_integer(stream, "SSRC", -1);
+			if(ssrc == -1) {
+				ingress_ssrcs = bencode_dictionary_get_expect(
+						stream, "ingress SSRCs", BENCODE_LIST);
+				if(!ingress_ssrcs || !ingress_ssrcs->child)
+					continue;
+				LM_DBG("rtpengine: XXX got ingress SSRCs\n");
+				ingress_ssrc = ingress_ssrcs->child;
+				if((ssrc = bencode_dictionary_get_integer(
+							ingress_ssrc, "SSRC", -1))
+						== -1) {
+					continue;
+				}
+			}
+
 			/* got a valid SSRC to watch for */
 			ssrcs[num_ssrcs] = ssrc;
 			LM_DBG("rtpengine: found SSRC '%lli' for label '%.*s'\n", ssrc,
@@ -4944,6 +5421,258 @@ static int rtpengine_answer1_f(struct sip_msg *msg, char *str1, char *str2)
 
 	return rtpengine_rtpp_set_wrap_fparam(
 			msg, rtpengine_answer_wrap, str1, str2, 2, OP_ANSWER);
+}
+
+static int rtpengine_subscribe_request_wrap_f(struct sip_msg *msg, char *str1,
+		char *str2, char *str3, char *str4, char *str5)
+{
+	str flags;
+	str viabranch;
+
+	void *parms[5];
+
+	parms[0] = NULL;
+	parms[1] = NULL;
+	parms[2] = NULL;
+	parms[3] = NULL;
+	parms[4] = NULL;
+
+	flags.s = NULL;
+	if(str1) {
+		if(get_str_fparam(&flags, msg, (fparam_t *)str1)) {
+			LM_ERR("Error getting string parameter\n");
+			return -1;
+		}
+		parms[0] = &flags;
+	}
+
+	if(str2) {
+		// get the SDP AVP
+		parms[1] = str2;
+	}
+	if(str3) {
+		// get the to-tag AVP
+		parms[2] = str3;
+	}
+	if(str4) {
+		// get the stream XAVP
+		parms[3] = str4;
+	}
+	if(str5) {
+		if(get_str_fparam(&viabranch, msg, (fparam_t *)str5)) {
+			LM_ERR("Error getting string parameter\n");
+			return -1;
+		}
+		parms[4] = &viabranch;
+	}
+
+	return rtpengine_rtpp_set_wrap(msg, rtpengine_subscribe_request_wrap, parms,
+			1, OP_SUBSCRIBE_REQUEST);
+}
+
+static int ki_subscribe_request(sip_msg_t *msg, str *flags, str *sdp_spv,
+		str *to_tag_spv, str *stream_xavp)
+{
+	void *parms[5] = {flags, sdp_spv, to_tag_spv, stream_xavp, NULL};
+	return rtpengine_rtpp_set_wrap(msg, rtpengine_subscribe_request_wrap, parms,
+			1, OP_SUBSCRIBE_REQUEST);
+}
+
+static int rtpengine_subscribe_request_wrap(
+		struct sip_msg *msg, void *d, int more, enum rtpe_operation op)
+{
+	void **parms;
+	str *flags = NULL;
+	str *sdp_spv = NULL;
+	str *to_tag_spv = NULL;
+	str *stream_xavp = NULL;
+	str *viabranch = NULL;
+	bencode_buffer_t bencbuf;
+	bencode_item_t *dict;
+	str ret_body, to_tag = {"", 0};
+
+	pv_spec_t *pvs = NULL;
+	pv_value_t dst_val;
+	memset(&dst_val, 0, sizeof(pv_value_t));
+	dst_val.flags |= PV_VAL_STR;
+
+	parms = d;
+	flags = parms[0];
+	sdp_spv = parms[1];
+	to_tag_spv = parms[2];
+	stream_xavp = parms[3];
+	viabranch = parms[4];
+
+	dict = rtpp_function_call_ok(
+			&bencbuf, msg, op, flags, viabranch, NULL, NULL, NULL);
+	if(!dict)
+		return -1;
+
+	// Extract SDP body from the RTPEngine response
+	if(!bencode_dictionary_get_str_dup(dict, "sdp", &ret_body)) {
+		LM_ERR("failed to extract sdp body from proxy reply\n");
+		return -1;
+	}
+
+	if(sdp_spv != NULL && sdp_spv->s != NULL && sdp_spv->len > 0) {
+		pvs = pv_cache_get(sdp_spv);
+		dst_val.rs.s = ret_body.s;
+		dst_val.rs.len = ret_body.len;
+		if(pv_set_spec_value(msg, pvs, 0, &dst_val) != 0) {
+			LM_ERR("failed to set sdp AVP\n");
+			return -1;
+		}
+		LM_DBG("Set sdp %.*s AVP to %.*s\n", sdp_spv->len, sdp_spv->s,
+				ret_body.len, ret_body.s);
+	}
+
+	// Extract and allocate a new to-tag from the RTPEngine response
+	if(!bencode_dictionary_get_str(dict, "to-tag", &to_tag)) {
+		LM_ERR("failed to extract to-tag from proxy reply\n");
+		return -1;
+	}
+	if(to_tag_spv != NULL && to_tag_spv->s != NULL && to_tag_spv->len > 0) {
+		pvs = pv_cache_get(to_tag_spv);
+		dst_val.rs.s = to_tag.s;
+		dst_val.rs.len = to_tag.len;
+		if(pv_set_spec_value(msg, pvs, 0, &dst_val) != 0) {
+			LM_ERR("failed to set to_tag AVP\n");
+			return -1;
+		}
+		LM_DBG("Set to_tag %.*s AVP to %.*s\n", to_tag_spv->len, to_tag_spv->s,
+				to_tag.len, to_tag.s);
+	}
+
+	if(stream_xavp != NULL) {
+		rtpengine_copy_streams_to_xavp(
+				stream_xavp, bencode_dictionary_get(dict, "tag-medias"));
+	}
+
+	// Free the bencode buffer
+	bencode_buffer_free(bencode_item_buffer(dict));
+	return 0;
+}
+
+
+static int rtpengine_subscribe_answer_wrap_f(
+		struct sip_msg *msg, char *str1, char *str2)
+{
+	str flags;
+	str viabranch;
+
+	void *parms[2];
+
+	parms[0] = NULL;
+	parms[1] = NULL;
+
+	flags.s = NULL;
+	if(str1) {
+		if(get_str_fparam(&flags, msg, (fparam_t *)str1)) {
+			LM_ERR("Error getting string parameter\n");
+			return -1;
+		}
+		parms[0] = &flags;
+	}
+	if(str2) {
+		if(get_str_fparam(&viabranch, msg, (fparam_t *)str2)) {
+			LM_ERR("Error getting string parameter\n");
+			return -1;
+		}
+		parms[1] = &viabranch;
+	}
+
+	return rtpengine_rtpp_set_wrap(msg, rtpengine_subscribe_answer_wrap, parms,
+			1, OP_SUBSCRIBE_ANSWER);
+}
+
+static int ki_subscribe_answer(sip_msg_t *msg, str *flags)
+{
+	void *parms[2] = {flags, NULL};
+	return rtpengine_rtpp_set_wrap(msg, rtpengine_subscribe_answer_wrap, parms,
+			1, OP_SUBSCRIBE_ANSWER);
+}
+
+static int rtpengine_subscribe_answer_wrap(
+		struct sip_msg *msg, void *d, int more, enum rtpe_operation op)
+{
+	void **parms;
+	str *flags = NULL;
+	str *viabranch = NULL;
+	bencode_buffer_t bencbuf;
+	bencode_item_t *dict;
+
+	parms = d;
+	flags = parms[0];
+	viabranch = parms[1];
+
+	dict = rtpp_function_call_ok(
+			&bencbuf, msg, op, flags, viabranch, NULL, NULL, NULL);
+	if(!dict)
+		return -1;
+	// Free the bencode buffer
+	bencode_buffer_free(bencode_item_buffer(dict));
+	return 0;
+}
+
+static int rtpengine_unsubscribe_wrap_f(
+		struct sip_msg *msg, char *str1, char *str2)
+{
+	str flags;
+	str viabranch;
+
+	void *parms[2];
+
+	parms[0] = NULL;
+	parms[1] = NULL;
+
+	flags.s = NULL;
+	if(str1) {
+		if(get_str_fparam(&flags, msg, (fparam_t *)str1)) {
+			LM_ERR("Error getting string parameter\n");
+			return -1;
+		}
+		parms[0] = &flags;
+	}
+	if(str2) {
+		if(get_str_fparam(&viabranch, msg, (fparam_t *)str2)) {
+			LM_ERR("Error getting string parameter\n");
+			return -1;
+		}
+		parms[1] = &viabranch;
+	}
+
+	return rtpengine_rtpp_set_wrap(
+			msg, rtpengine_unsubscribe_wrap, parms, 1, OP_UNSUBSCRIBE);
+}
+
+static int ki_unsubscribe(sip_msg_t *msg, str *flags)
+{
+	void *parms[2] = {flags, NULL};
+	return rtpengine_rtpp_set_wrap(
+			msg, rtpengine_unsubscribe_wrap, parms, 1, OP_UNSUBSCRIBE);
+}
+
+
+static int rtpengine_unsubscribe_wrap(
+		struct sip_msg *msg, void *d, int more, enum rtpe_operation op)
+{
+	void **parms;
+	str *flags = NULL;
+	str *viabranch = NULL;
+	bencode_buffer_t bencbuf;
+	bencode_item_t *dict;
+
+	parms = d;
+	flags = parms[0];
+	viabranch = parms[1];
+
+	dict = rtpp_function_call_ok(
+			&bencbuf, msg, op, flags, viabranch, NULL, NULL, NULL);
+	if(!dict)
+		return -1;
+	// Free the bencode buffer
+	bencode_buffer_free(bencode_item_buffer(dict));
+	return 0;
 }
 
 static int rtpengine_offer_answer(
@@ -5461,6 +6190,45 @@ static int fixup_free_rtpengine_query_v(void **param, int param_no)
 	return -1;
 }
 
+static int fixup_rtpengine_subscribe_request_v(void **param, int param_no)
+{
+	if(param_no == 1) {
+		return fixup_spve_null(param, 1);
+	}
+
+	if(param_no >= 2 && param_no <= 4) {
+		return fixup_str_null(param, 1);
+	}
+
+	if(param_no == 5) {
+		return fixup_spve_null(param, 1);
+	}
+
+	LM_ERR("invalid parameter number <%d>\n", param_no);
+	return -1;
+}
+
+/**
+ *
+ */
+static int fixup_free_rtpengine_subscribe_request_v(void **param, int param_no)
+{
+	if(param_no == 1) {
+		return fixup_free_spve_null(param, 1);
+	}
+
+	if(param_no >= 2 && param_no <= 4) {
+		return fixup_free_str_null(param, 1);
+	}
+
+	if(param_no == 5) {
+		return fixup_free_spve_null(param, 1);
+	}
+
+	LM_ERR("invalid parameter number <%d>\n", param_no);
+	return -1;
+}
+
 static int set_rtp_inst_pvar(struct sip_msg *msg, const str *const uri)
 {
 	pv_value_t val;
@@ -5711,6 +6479,13 @@ static int ki_unblock_dtmf2(sip_msg_t *msg, str *flags, str *viabranch)
 	void *parms[2] = {flags, viabranch};
 	return rtpengine_rtpp_set_wrap(
 			msg, rtpengine_simple_wrap, parms, 1, OP_UNBLOCK_DTMF);
+}
+
+static int ki_play_dtmf(sip_msg_t *msg, str *flags)
+{
+	void *parms[2] = {flags, NULL};
+	return rtpengine_rtpp_set_wrap(
+			msg, rtpengine_simple_wrap, parms, 1, OP_PLAY_DTMF);
 }
 
 /* KI - play media */
@@ -5966,6 +6741,11 @@ static sr_kemi_t sr_kemi_rtpengine_exports[] = {
         { SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
             SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
     },
+	{ str_init("rtpengine"), str_init("play_dtmf"),
+		SR_KEMIP_INT, ki_play_dtmf,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
 
     { str_init("rtpengine"), str_init("unblock_dtmf0"),
         SR_KEMIP_INT, ki_unblock_dtmf0,
@@ -6043,6 +6823,22 @@ static sr_kemi_t sr_kemi_rtpengine_exports[] = {
         { SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_NONE,
             SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
     },
+	{ str_init("rtpengine"), str_init("rtpengine_subscribe_request"),
+		SR_KEMIP_INT, ki_subscribe_request,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("rtpengine"), str_init("rtpengine_subscribe_answer"),
+		SR_KEMIP_INT, ki_subscribe_answer,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("rtpengine"), str_init("rtpengine_unsubscribe"),
+		SR_KEMIP_INT, ki_unsubscribe,
+		{ SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+
 
     { {0, 0}, {0, 0}, 0, NULL, { 0, 0, 0, 0, 0, 0 } }
 };
@@ -6067,68 +6863,96 @@ static int bind_rtpengine(rtpengine_api_t *api)
 	api->rtpengine_answer = ki_rtpengine_answer2;
 	api->rtpengine_offer = ki_rtpengine_offer2;
 	api->rtpengine_delete = ki_rtpengine_delete2;
-	api->rtpengine_subscribe_request = ki_rtpengine_subscribe_request;
-	api->rtpengine_subscribe_answer = ki_rtpengine_subscribe_answer;
-	api->rtpengine_unsubscribe = ki_rtpengine_unsubscribe;
+	api->rtpengine_subscribe_request = rtpengine_subscribe_request;
+	api->rtpengine_subscribe_answer = rtpengine_subscribe_answer;
+	api->rtpengine_unsubscribe = rtpengine_unsubscribe;
 
 	return 0;
 }
 
-static bencode_item_t *rtpengine_subscribe_wrap(struct rtpengine_session *sess,
-		enum rtpe_operation op, str *to_tag, str *flags,
-		unsigned int subscribe_flags, str *body)
+/**
+ * @brief Wraps the subscription request for RTPEngine.
+ *
+ * @details Constructs a bencode dictionary containing the subscription details.
+ * Handles different subscription modes.
+ *
+ * @param sess The RTPEngine session containing session-related data.
+ * @param op The RTPEngine operation (e.g., subscribe , unsubscribe).
+ * @param to_tag Optional tag identifying the participant (nullable).
+ * @param flags A space-separated string of feature flags used in rtpengine functions.
+ * @param subscribe_flags Flags controlling the subscription behavior (e.g., SIPREC mode, inactivity).
+ * @param body Optional SDP body for the subscribe answer command (nullable).
+ * @return A pointer to a bencode item representing the RTPEngine response, or NULL on failure.
+ */
+static bencode_item_t *w_rtpengine_subscribe_wrap(
+		struct rtpengine_session *sess, enum rtpe_operation op, str *to_tag,
+		str *flags, unsigned int subscribe_flags, str *body)
 {
 	static bencode_buffer_t bencbuf;
 	bencode_item_t *dict, *list = NULL;
-	bencode_item_t *ret;
 	struct sip_msg *msg;
 	str *viabranch = NULL;
 
+	// Initialize the bencode buffer
 	if(bencode_buffer_init(&bencbuf)) {
 		LM_ERR("could not initialize bencode_buffer_t\n");
 		return NULL;
 	}
-	dict = bencode_dictionary(&bencbuf);
 
-	if(sess->callid)
+	// Create and fill a dictionary with subscription data
+	dict = bencode_dictionary(&bencbuf);
+	if(sess->callid) {
 		bencode_dictionary_add_str(dict, "call-id", sess->callid);
-	else if(sess->msg)
+	} else if(sess->msg) {
 		bencode_dictionary_add_str(dict, "call-id", &sess->msg->callid->body);
-	if(sess->branch != RTPENGINE_ALL_BRANCHES)
+	}
+	if(sess->branch != RTPENGINE_ALL_BRANCHES) {
 		bencode_dictionary_add_str(dict, "via-branch", viabranch);
-	if(to_tag && to_tag->len)
+	}
+	if(to_tag && to_tag->len) {
 		bencode_dictionary_add_str(dict, "to-tag", to_tag);
+	}
 	if(subscribe_flags & RTP_SUBSCRIBE_MODE_SIPREC) {
 		list = bencode_list(&bencbuf);
 		bencode_list_add_string(list, "all");
 		bencode_list_add_string(list, "siprec");
-	} else if((subscribe_flags & RTP_COPY_LEG_BOTH) == RTP_COPY_LEG_BOTH) {
+	} else if((subscribe_flags & RTP_SUBSCRIBE_LEG_BOTH)
+			  == RTP_SUBSCRIBE_LEG_BOTH) {
 		list = bencode_list(&bencbuf);
 		bencode_list_add_string(list, "all");
-	} else if(subscribe_flags & RTP_COPY_LEG_CALLER && sess->from_tag) {
+	} else if(subscribe_flags & RTP_SUBSCRIBE_LEG_CALLER && sess->from_tag) {
 		bencode_dictionary_add_str(dict, "from-tag", sess->from_tag);
 	} else if(sess->to_tag) {
 		bencode_dictionary_add_str(dict, "from-tag", sess->to_tag);
 	}
 	if(subscribe_flags & RTP_SUBSCRIBE_MODE_DISABLE) {
-		if(!list)
+		if(!list) {
 			list = bencode_list(&bencbuf);
+		}
 		bencode_list_add_string(list, "inactive");
 	}
-	if(list)
+	if(list) {
 		bencode_dictionary_add(dict, "flags", list);
-
-	if(op == OP_SUBSCRIBE_ANSWER)
+	}
+	if(op == OP_SUBSCRIBE_ANSWER) {
 		bencode_dictionary_add_str(dict, "sdp", body);
+	}
 
+	// Use the session's message or a fake message
 	msg = (sess->msg ? sess->msg : faked_msg_get_next());
 
-	ret = rtpp_function_call_ok(
+	return rtpp_function_call_ok(
 			&bencbuf, msg, op, flags, NULL, NULL, NULL, dict);
-
-	return ret;
 }
 
+/**
+ * @brief Allocates and initializes a new participant tag.
+ *
+ * @details Note that to_tag must be freed after use.
+ *
+ * @param tag The tag to copy.
+ * @return A new allocated tag, or NULL on failure.
+ */
 static str *rtpengine_new_subs(str *tag)
 {
 	str *to_tag = shm_malloc(sizeof *to_tag + tag->len);
@@ -6137,102 +6961,253 @@ static str *rtpengine_new_subs(str *tag)
 		to_tag->len = tag->len;
 		memcpy(to_tag->s, tag->s, tag->len);
 	}
+
 	return to_tag;
 }
 
+/**
+ * @brief Copies RTPEngine stream data into a structured format.
+ *
+ * @details Extracts stream information from a bencode item and populates the result structure.
+ * Validates stream data.
+ *
+ * @param streams The bencode item containing stream data.
+ * @param ret The structure to populate with stream data.
+ * @param sess The rtpengine session containing session-related data.
+ * @return void.
+ */
 static void rtpengine_copy_streams(bencode_item_t *streams,
-		struct rtpengine_streams *ret, struct rtpengine_session *sess)
+		struct rtpengine_streams *ret_streams, struct rtpengine_session *sess)
 {
 	bencode_item_t *item, *medias;
-	str tmp = STR_NULL;
-	int leg = RTPENGINE_CALLEE, medianum, label, s;
-	if(!ret || !streams)
+	str tag = STR_NULL, label_str = STR_NULL;
+	int leg = RTPENGINE_CALLEE, medianum, label, streams_count;
+
+	if(!ret_streams || !streams) {
 		return;
-	ret->count = 0;
-	s = 0;
+	}
+
+	ret_streams->count = 0;
+	streams_count = 0;
+
+	// Iterate through each item (each item is related to a participant)
 	for(item = streams->child; item; item = item->sibling) {
-		tmp.s = bencode_dictionary_get_string(item, "tag", &tmp.len);
-		if(!tmp.s)
+		// Set leg based on participant tag
+		tag.s = bencode_dictionary_get_string(item, "tag", &tag.len);
+		if(!tag.s) {
 			LM_WARN("could not retrieve tag - placing to %s\n",
 					(leg == RTPENGINE_CALLER ? "caller" : "callee"));
-		else {
+		} else {
 			if(sess->from_tag && sess->from_tag->len > 0
-					&& str_strcmp(&tmp, sess->from_tag) == 0)
+					&& str_strcmp(&tag, sess->from_tag) == 0) {
 				leg = RTPENGINE_CALLER;
-			else if(sess->to_tag && sess->to_tag->len > 0
-					&& str_strcmp(&tmp, sess->to_tag) != 0)
+			} else if(sess->to_tag && sess->to_tag->len > 0
+					  && str_strcmp(&tag, sess->to_tag) != 0) {
 				leg = RTPENGINE_CALLER;
-			else
+			} else {
 				leg = RTPENGINE_CALLEE;
+			}
 		}
+		// Retrieve media streams
 		medias = bencode_dictionary_get_expect(item, "medias", BENCODE_LIST);
-		if(!medias)
+		if(!medias) {
 			continue;
+		}
+		// Iterate through each media stream
 		for(medias = medias->child; medias; medias = medias->sibling) {
-			s = ret->count;
-			if(s == RTP_COPY_MAX_STREAMS) {
+			streams_count = ret_streams->count;
+			if(streams_count == RTP_SUBSCRIBE_MAX_STREAMS) {
 				LM_WARN("maximum amount of streams %d reached!\n",
-						RTP_COPY_MAX_STREAMS);
+						RTP_SUBSCRIBE_MAX_STREAMS);
 				return;
 			}
 			medianum = bencode_dictionary_get_integer(item, "index", 0);
-			tmp.s = bencode_dictionary_get_string(medias, "label", &tmp.len);
-			if(str2sint(&tmp, &label) < 0) {
+			label_str.s = bencode_dictionary_get_string(
+					medias, "label", &label_str.len);
+			if(str2sint(&label_str, &label) < 0) {
 				LM_WARN("invalid label %.*s - not integer - skipping\n",
-						tmp.len, tmp.s);
+						label_str.len, label_str.s);
 				continue;
 			}
-			ret->streams[s].leg = leg;
-			ret->streams[s].label = label;
-			ret->streams[s].medianum = medianum;
-			ret->count++;
+			ret_streams->streams[streams_count].leg = leg;
+			ret_streams->streams[streams_count].label = label;
+			ret_streams->streams[streams_count].medianum = medianum;
+			ret_streams->count++;
 		}
 	}
 }
 
-static int ki_rtpengine_subscribe_request(struct rtpengine_session *sess,
+static void rtpengine_copy_streams_to_xavp(
+		str *stream_xavp, bencode_item_t *streams)
+{
+	bencode_item_t *item, *medias;
+	str label_str = STR_NULL;
+	str tag = STR_NULL;
+	int label;
+
+	if(!streams) {
+		return;
+	}
+
+	if(stream_xavp->len == 0) {
+		LM_DBG("stream_xavp is not set, nothing to do\n");
+		return;
+	}
+
+	sr_xval_t stream_val;
+	sr_xval_t tag_val;
+	sr_xval_t media_xval;
+	sr_xavp_t *media_xavp = NULL;
+
+	str label_name = str_init("label");
+	str tag_name = str_init("tag");
+
+	// Iterate through each item (each item is related to a participant)
+	for(item = streams->child; item; item = item->sibling) {
+		// Set leg based on participant tag
+		tag.s = bencode_dictionary_get_string(item, "tag", &tag.len);
+		if(!tag.s) {
+			LM_WARN("could not retrieve tag \n");
+			continue;
+		}
+		memset(&tag_val, 0, sizeof(sr_xval_t));
+		tag_val.type = SR_XTYPE_STR;
+		tag_val.v.s = tag;
+
+		// Retrieve media streams
+		medias = bencode_dictionary_get_expect(item, "medias", BENCODE_LIST);
+		if(!medias) {
+			continue;
+		}
+
+		media_xavp = NULL;
+		xavp_add_value(&tag_name, &tag_val, &media_xavp);
+		// Iterate through each media stream
+		for(medias = medias->child; medias; medias = medias->sibling) {
+			label_str.s = bencode_dictionary_get_string(
+					medias, "label", &label_str.len);
+			if(str2sint(&label_str, &label) < 0) {
+				LM_WARN("invalid label %.*s - not integer - skipping\n",
+						label_str.len, label_str.s);
+				continue;
+			}
+			memset(&media_xval, 0, sizeof(sr_xval_t));
+			media_xval.type = SR_XTYPE_LONG;
+			media_xval.v.l = (long)label;
+			if(xavp_add_value(&label_name, &media_xval, &media_xavp) == NULL) {
+				LM_ERR("failed to add label %d to xavp\n", label);
+				continue;
+			}
+		}
+		memset(&stream_val, 0, sizeof(sr_xval_t));
+		stream_val.type = SR_XTYPE_XAVP;
+		stream_val.v.xavp = media_xavp;
+		if(xavp_add_value(stream_xavp, &stream_val, NULL) == NULL) {
+			LM_ERR("failed to add stream xavp for tag %s\n", tag.s);
+			xavp_free(media_xavp);
+			continue;
+		}
+	}
+}
+
+/**
+ * @brief Sends a subscribe request command to RTPEngine to request subscription (i.e. receiving a copy of the media).
+ *
+ * @details This function interacts with RTPEngine to request a copy of media streams for the given session.
+ * Note: The to_tag must be freed after use.
+ *
+ * @param sess The rtpengine session containing session-related data.
+ * @param to_tag Pointer to a participant tag which corresponds to the subscription. If NULL, RTPEngine generates it.
+ * @param flags A space-separated string of feature flags used in rtpengine functions.
+ * @param subscribe_flags Flags controlling the subscription behavior (e.g., SIPREC mode, inactivity).
+ * @param ret_body Pointer to a string to store the SDP body extracted from RTPEngine's response.
+ * @param ret_streams Pointer to a structure to store stream data extracted from RTPEngine's response.
+ * @return 1 on success, -1 on failure.
+ */
+static int rtpengine_subscribe_request(struct rtpengine_session *sess,
 		str **to_tag, str *flags, unsigned int subscribe_flags, str *ret_body,
 		struct rtpengine_streams *ret_streams)
 {
-	str tmp;
-	bencode_item_t *ret;
-	ret = rtpengine_subscribe_wrap(
+	str tmp_to_tag;
+	bencode_item_t *dict;
+
+	// Wrap the subscribe request command and send to RTPEngine
+	dict = w_rtpengine_subscribe_wrap(
 			sess, OP_SUBSCRIBE_REQUEST, *to_tag, flags, subscribe_flags, NULL);
-	if(!ret)
+	if(!dict) {
 		return -1;
-	if(!bencode_dictionary_get_str_dup(ret, "sdp", ret_body))
+	}
+	// Extract SDP body from the RTPEngine response
+	if(!bencode_dictionary_get_str_dup(dict, "sdp", ret_body)) {
 		LM_ERR("failed to extract sdp body from proxy reply\n");
-	if(ret_streams)
+	}
+	// Extract stream data from the RTPEngine response
+	if(ret_streams) {
 		rtpengine_copy_streams(
-				bencode_dictionary_get(ret, "tag-medias"), ret_streams, sess);
-	if(!bencode_dictionary_get_str(ret, "to-tag", &tmp))
+				bencode_dictionary_get(dict, "tag-medias"), ret_streams, sess);
+	}
+	// Extract and allocate a new to-tag from the RTPEngine response
+	if(!bencode_dictionary_get_str(dict, "to-tag", &tmp_to_tag)) {
 		LM_ERR("failed to extract to-tag from proxy reply\n");
-	else
-		*to_tag = rtpengine_new_subs(&tmp);
-	bencode_buffer_free(bencode_item_buffer(ret));
-	return 0;
+	} else {
+		*to_tag = rtpengine_new_subs(&tmp_to_tag);
+	}
+	// Free the bencode buffer
+	bencode_buffer_free(bencode_item_buffer(dict));
+
+	return 1;
 }
 
-static int ki_rtpengine_subscribe_answer(
+/**
+ * @brief Sends a subscribe answer command to RTPEngine.
+ *
+ * @details If successful, media forwarding will start to the endpoint given in the SDP (body param).
+ *
+ * @param sess The rtpengine session containing session-related data.
+ * @param to_tag The participant tag identifying the subscription.
+ * @param flags A space-separated string of feature flags used in rtpengine functions.
+ * @param body The SDP body to send as part of the subscribe answer command.
+ * @return 1 on success, -1 on failure.
+ */
+static int rtpengine_subscribe_answer(
 		struct rtpengine_session *sess, str *to_tag, str *flags, str *body)
 {
 	bencode_item_t *ret;
-	ret = rtpengine_subscribe_wrap(
+
+	// Wrap the subscribe answer command and send to RTPEngine
+	ret = w_rtpengine_subscribe_wrap(
 			sess, OP_SUBSCRIBE_ANSWER, to_tag, flags, 0, body);
-	if(!ret)
+	if(!ret) {
 		return -1;
+	}
+	// Free the bencode buffer
 	bencode_buffer_free(bencode_item_buffer(ret));
 	return ret != NULL;
 }
 
-static int ki_rtpengine_unsubscribe(
+/**
+ * @brief Sends an unsubscribe command to RTPEngine to stop an established subscription.
+ *
+ * @details The subscription to be stopped is identified by the provided to-tag.
+ *
+ * @param sess The rtpengine session containing session-related data.
+ * @param to_tag The participant tag identifying the subscription to stop.
+ * @param flags: A space-separated string of feature flags used in rtpengine functions.
+ * @return 1 on success, -1 on failure.
+ */
+static int rtpengine_unsubscribe(
 		struct rtpengine_session *sess, str *to_tag, str *flags)
 {
 	bencode_item_t *ret;
-	ret = rtpengine_subscribe_wrap(
+
+	// Wrap the unsubscribe command and send to RTPEngine
+	ret = w_rtpengine_subscribe_wrap(
 			sess, OP_UNSUBSCRIBE, to_tag, flags, 0, NULL);
-	if(!ret)
+	if(!ret) {
 		return -1;
+	}
+	// Free the bencode buffer
 	bencode_buffer_free(bencode_item_buffer(ret));
+
 	return ret != NULL;
 }

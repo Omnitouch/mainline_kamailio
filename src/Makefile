@@ -155,11 +155,11 @@ export extra_defs
 # - exclude_modules
 
 ifneq ($(modules_configured),1)
-#modules_all=$(filter-out modules/CVS,$(wildcard modules/*))
+#modules_all=$(filter-out modules/CMakeLists.txt,$(wildcard modules/*))
 
 # create modules*_all vars
 $(foreach mods,$(modules_dirs),$(eval \
-	$(mods)_all=$$(filter-out $(mods)/CVS $(mods)/CMakeLists.txt, \
+	$(mods)_all=$$(filter-out $(mods)/CMakeLists.txt, \
 	$$(wildcard $(mods)/*))))
 #debugging
 #$(foreach mods,$(modules_dirs),$(info "$(mods)_all=$($(mods)_all)"))
@@ -261,7 +261,8 @@ $(NAME): $(extra_objs) # static_modules
 core/lex.yy.c: core/cfg.lex core/cfg.tab.h $(ALLDEP)
 	$(LEX) -o core/lex.yy.c $<
 
-core/cfg.tab.c core/cfg.tab.h: core/cfg.y  $(ALLDEP)
+core/cfg.tab.c: core/cfg.tab.h
+core/cfg.tab.h: core/cfg.y  $(ALLDEP)
 	$(YACC) $(YACC_FLAGS) $<
 
 nullstring=
@@ -565,9 +566,6 @@ tar: makefile_vars $(auto_gen_keep)
 		--exclude=$(notdir $(realpath $(shell pwd)/..))/$(MAIN_NAME)_tls* \
 		--exclude=$(notdir $(realpath $(shell pwd)/..))/misc/obsolete \
 		--exclude=.git* \
-		--exclude=CVS* \
-		--exclude=.svn* \
-		--exclude=.cvsignore \
 		--exclude=tags \
 		--exclude=librpath.lst \
 		--exclude=libiname.lst \

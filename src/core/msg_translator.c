@@ -629,14 +629,15 @@ static inline int lumps_len(
 				if(recv_af == AF_INET6)                                      \
 					new_len += 2;                                            \
 			} else {                                                         \
-				LM_CRIT("rcv ip - null bind_address\n");                     \
+				LM_CRIT("null bind_address (SUBST_RCV_IP/%p/%p)\n",          \
+						msg->rcv.bind_address, recv_address_str);            \
 			};                                                               \
 			break;                                                           \
 		case SUBST_RCV_PORT:                                                 \
 			if(STR_WITHVAL(recv_port_str)) {                                 \
 				new_len += recv_port_str->len;                               \
 			} else {                                                         \
-				LM_CRIT(" rcv port - null bind_address\n");                  \
+				LM_CRIT("rcv port - null bind_address (SUBST_RCV_PORT)\n");  \
 			};                                                               \
 			break;                                                           \
 		case SUBST_RCV_PROTO:                                                \
@@ -666,7 +667,7 @@ static inline int lumps_len(
 								msg->rcv.bind_address->proto);               \
 				}                                                            \
 			} else {                                                         \
-				LM_CRIT("null bind_address\n");                              \
+				LM_CRIT("null bind_address (SUBST_RCV_PROTO)\n");            \
 			};                                                               \
 			break;                                                           \
 		case SUBST_RCV_ALL:                                                  \
@@ -707,7 +708,7 @@ static inline int lumps_len(
 						new_len += TRANSPORT_PARAM_LEN + 4;                  \
 						break;                                               \
 					default:                                                 \
-						LM_CRIT("unknown proto %d\n",                        \
+						LM_CRIT("unknown proto %d (SUBST_RCV_ALL)\n",        \
 								msg->rcv.bind_address->proto);               \
 				}                                                            \
 				if((subst_l)->u.subst == SUBST_RCV_ALL_EX                    \
@@ -717,7 +718,7 @@ static inline int lumps_len(
 				}                                                            \
 				RCVCOMP_LUMP_LEN                                             \
 			} else {                                                         \
-				LM_CRIT("null bind_address\n");                              \
+				LM_CRIT("null bind_address (SUBST_RCV_ALL)\n");              \
 			};                                                               \
 			break;                                                           \
 		case SUBST_SND_IP:                                                   \
@@ -726,14 +727,14 @@ static inline int lumps_len(
 				if(send_af == AF_INET6 && send_address_str->s[0] != '[')     \
 					new_len += 2;                                            \
 			} else {                                                         \
-				LM_CRIT("null send_sock\n");                                 \
+				LM_CRIT("null send_sock (SUBST_SND_IP)\n");                  \
 			};                                                               \
 			break;                                                           \
 		case SUBST_SND_PORT:                                                 \
 			if(STR_WITHVAL(send_port_str)) {                                 \
 				new_len += send_port_str->len;                               \
 			} else {                                                         \
-				LM_CRIT("null send sock port\n");                            \
+				LM_CRIT("null send sock port (SUBST_SND_PORT)\n");           \
 			};                                                               \
 			break;                                                           \
 		case SUBST_SND_PROTO:                                                \
@@ -759,10 +760,11 @@ static inline int lumps_len(
 						new_len += 4;                                        \
 						break;                                               \
 					default:                                                 \
-						LM_CRIT("unknown proto %d\n", send_sock->proto);     \
+						LM_CRIT("unknown proto %d (SUBST_SND_PROTO)\n",      \
+								send_sock->proto);                           \
 				}                                                            \
 			} else {                                                         \
-				LM_CRIT("null send_sock\n");                                 \
+				LM_CRIT("null send_sock (SUBST_SND_PROTO)\n");               \
 			};                                                               \
 			break;                                                           \
 		case SUBST_SND_ALL:                                                  \
@@ -803,7 +805,8 @@ static inline int lumps_len(
 						new_len += TRANSPORT_PARAM_LEN + 4;                  \
 						break;                                               \
 					default:                                                 \
-						LM_CRIT("unknown proto %d\n", send_sock->proto);     \
+						LM_CRIT("unknown proto %d (SUBST_SND_ALL)\n",        \
+								send_sock->proto);                           \
 				}                                                            \
 				if((subst_l)->u.subst == SUBST_SND_ALL_EX                    \
 						&& send_sock->sockname.len > 0) {                    \
@@ -811,7 +814,7 @@ static inline int lumps_len(
 				}                                                            \
 				SENDCOMP_LUMP_LEN                                            \
 			} else {                                                         \
-				LM_CRIT("null send_sock\n");                                 \
+				LM_CRIT("null send_sock (SUBST_SND_ALL)\n");                 \
 			};                                                               \
 			break;                                                           \
 		case SUBST_NOP: /* do nothing */                                     \
@@ -1055,7 +1058,8 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 					offset++;                                                  \
 				}                                                              \
 			} else {                                                           \
-				LM_CRIT("null bind_address\n");                                \
+				LM_CRIT("null bind_address (SUBST_RCV_IP/%p/%p)\n",            \
+						msg->rcv.bind_address, recv_address_str);              \
 			};                                                                 \
 			break;                                                             \
 		case SUBST_RCV_PORT:                                                   \
@@ -1064,7 +1068,7 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 						recv_port_str->len);                                   \
 				offset += recv_port_str->len;                                  \
 			} else {                                                           \
-				LM_CRIT("null bind_address\n");                                \
+				LM_CRIT("null recv port str (SUBST_RCV_PORT)\n");              \
 			};                                                                 \
 			break;                                                             \
 		case SUBST_RCV_ALL:                                                    \
@@ -1156,7 +1160,8 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 				}                                                              \
 				RCVCOMP_PARAM_ADD                                              \
 			} else {                                                           \
-				LM_CRIT("null bind_address\n");                                \
+				LM_CRIT("null bind_address (SUBST_RCV_ALL/%p/%p)\n",           \
+						msg->rcv.bind_address, recv_address_str);              \
 			};                                                                 \
 			break;                                                             \
 		case SUBST_SND_IP:                                                     \
@@ -1173,7 +1178,7 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 					offset++;                                                  \
 				}                                                              \
 			} else {                                                           \
-				LM_CRIT("null send_sock\n");                                   \
+				LM_CRIT("null send_sock (SUBST_SND_IP)\n");                    \
 			};                                                                 \
 			break;                                                             \
 		case SUBST_SND_PORT:                                                   \
@@ -1182,7 +1187,7 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 						send_port_str->len);                                   \
 				offset += send_port_str->len;                                  \
 			} else {                                                           \
-				LM_CRIT("null send sock port\n");                              \
+				LM_CRIT("null send sock port (SUBST_SND_PORT)\n");             \
 			};                                                                 \
 			break;                                                             \
 		case SUBST_SND_ALL:                                                    \
@@ -1272,7 +1277,7 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 				}                                                              \
 				SENDCOMP_PARAM_ADD                                             \
 			} else {                                                           \
-				LM_CRIT("null bind_address\n");                                \
+				LM_CRIT("null send_sock (SUBST_SND_ALL)\n");                   \
 			};                                                                 \
 			break;                                                             \
 		case SUBST_RCV_PROTO:                                                  \
@@ -1311,7 +1316,7 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 								msg->rcv.bind_address->proto);                 \
 				}                                                              \
 			} else {                                                           \
-				LM_CRIT("null send_sock\n");                                   \
+				LM_CRIT("null bind address (SUBST_RCV_PROTO)\n");              \
 			};                                                                 \
 			break;                                                             \
 		case SUBST_SND_PROTO:                                                  \
@@ -1349,7 +1354,7 @@ void process_lumps(struct sip_msg *msg, struct lump *lumps, char *new_buf,
 						LM_CRIT("unknown proto %d\n", send_sock->proto);       \
 				}                                                              \
 			} else {                                                           \
-				LM_CRIT("null send_sock\n");                                   \
+				LM_CRIT("null send_sock (SUBST_SND_PROTO)\n");                 \
 			};                                                                 \
 			break;                                                             \
 		default:                                                               \
@@ -2667,44 +2672,54 @@ char *build_res_buf_from_sip_req(unsigned int code, str *text, str *new_tag,
 				if(unlikely(httpreq))
 					pvia = p;
 				if(hdr == msg->h_via1) {
-					if(rport_buf) {
-						if(msg->via1->rport) { /* delete the old one */
-							/* copy until rport */
-							append_str_trans(p, hdr->name.s,
-									msg->via1->rport->start - hdr->name.s - 1,
-									msg);
-							/* copy new rport */
-							append_str(p, rport_buf, rport_len);
-							/* copy the rest of the via */
-							append_str_trans(p,
-									msg->via1->rport->start
-											+ msg->via1->rport->size,
-									hdr->body.s + hdr->body.len
-											- msg->via1->rport->start
-											- msg->via1->rport->size,
-									msg);
-						} else { /* just append the new one */
-							/* normal whole via copy */
-							append_str_trans(p, hdr->name.s,
-									(hdr->body.s + hdr->body.len) - hdr->name.s,
-									msg);
-							append_str(p, rport_buf, rport_len);
-						}
-					} else {
-						/* normal whole via copy */
+					if(rport_buf && msg->via1->rport) { /* replace old rport */
+						/* copy until rport */
+						append_str_trans(p, hdr->name.s,
+								msg->via1->rport->start - hdr->name.s - 1, msg);
+					} else if(msg->via1->branch) { /* add after branch */
+						append_str_trans(p, hdr->name.s,
+								msg->via1->branch->start - hdr->name.s
+										+ msg->via1->branch->size,
+								msg);
+					} else { /* append after header */
 						append_str_trans(p, hdr->name.s,
 								(hdr->body.s + hdr->body.len) - hdr->name.s,
 								msg);
 					}
-					if(received_buf)
+					if(rport_buf) {
+						/* add rport */
+						append_str(p, rport_buf, rport_len);
+					}
+					if(received_buf) {
+						/* add received */
 						append_str(p, received_buf, received_len);
+					}
+					if(xparams.len > 0) {
+						/* add extra parameters */
+						append_str(p, xparams.s, xparams.len);
+					}
+					/* copy the rest of the via */
+					if(rport_buf && msg->via1->rport) {
+						append_str_trans(p,
+								msg->via1->rport->start
+										+ msg->via1->rport->size,
+								hdr->body.s + hdr->body.len
+										- msg->via1->rport->start
+										- msg->via1->rport->size,
+								msg);
+					} else if(msg->via1->branch) {
+						append_str_trans(p,
+								msg->via1->branch->start
+										+ msg->via1->branch->size,
+								hdr->body.s + hdr->body.len
+										- msg->via1->branch->start
+										- msg->via1->branch->size,
+								msg);
+					}
 				} else {
 					/* normal whole via copy */
 					append_str_trans(p, hdr->name.s,
 							(hdr->body.s + hdr->body.len) - hdr->name.s, msg);
-				}
-				if(xparams.len > 0) {
-					append_str(p, xparams.s, xparams.len);
 				}
 				append_str(p, CRLF, CRLF_LEN);
 				/* if is HTTP, replace Via with Sia
@@ -2906,7 +2921,7 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 #endif /* USE_COMP */
 	int port;
 	int proto;
-	struct ip_addr ip;
+	struct ip_addr ip = {0};
 	union sockaddr_union *from = NULL;
 	union sockaddr_union local_addr;
 	struct tcp_connection *con = NULL;
@@ -2925,12 +2940,20 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 		}
 	}
 	if(address_str == NULL) {
-		if(hp && hp->host->len)
+		if(hp && hp->host->len) {
 			address_str = hp->host;
-		else if(send_sock->useinfo.name.len > 0)
-			address_str = &(send_sock->useinfo.name);
-		else
-			address_str = &(send_sock->address_str);
+		} else if(send_sock != NULL) {
+			if(send_sock->useinfo.name.len > 0) {
+				address_str = &(send_sock->useinfo.name);
+			} else {
+				address_str = &(send_sock->address_str);
+			}
+		}
+	}
+	if(address_str == NULL || address_str->len <= 0) {
+		LM_ERR("unable to get address value\n");
+		ser_error = E_BAD_ADDRESS;
+		return 0;
 	}
 	if(msg && (msg->msg_flags & FL_USE_XAVP_VIA_FIELDS)
 			&& _ksr_xavp_via_fields.len > 0) {
@@ -2944,13 +2967,15 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 	if(port_str == NULL) {
 		if(hp && hp->port->len) {
 			port_str = hp->port;
-		} else if(send_sock->useinfo.name.len > 0) {
-			if(send_sock->useinfo.port_no > 0) {
-				port_str = &(send_sock->useinfo.port_no_str);
-			}
-		} else {
-			if(send_sock->port_no != SIP_PORT) {
-				port_str = &(send_sock->port_no_str);
+		} else if(send_sock != NULL) {
+			if(send_sock->useinfo.name.len > 0) {
+				if(send_sock->useinfo.port_no > 0) {
+					port_str = &(send_sock->useinfo.port_no_str);
+				}
+			} else {
+				if(send_sock->port_no != SIP_PORT) {
+					port_str = &(send_sock->port_no_str);
+				}
 			}
 		}
 	}
@@ -2965,7 +2990,7 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 		}
 	}
 	if(proto == PROTO_NONE) {
-		if(send_sock->useinfo.proto != PROTO_NONE) {
+		if(send_sock != NULL && send_sock->useinfo.proto != PROTO_NONE) {
 			proto = send_sock->useinfo.proto;
 		} else {
 			proto = send_info->proto;
@@ -3042,8 +3067,8 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 
 		if(con == NULL) {
 			LM_WARN("TCP/TLS connection (id: %d) for WebSocket could not be "
-					"found\n",
-					send_info->id);
+					"found - likely it is gone (dst: [%s]:%d)\n",
+					send_info->id, (port) ? ip_addr2a(&ip) : "", port);
 			pkg_free(line_buf);
 			return 0;
 		}
@@ -3068,7 +3093,7 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 	}
 	/* add [] only if ipv6 address is used;
 	 * if using pre-set no check is made */
-	if(send_sock->address.af == AF_INET6) {
+	if(send_sock != NULL && send_sock->address.af == AF_INET6) {
 		/* lightweight safety checks if brackets set
 		 * or non-ipv6 (e.g., advertised hostname) */
 		if(address_str->s[0] != '['
