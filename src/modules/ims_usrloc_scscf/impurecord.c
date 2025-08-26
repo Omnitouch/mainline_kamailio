@@ -418,6 +418,13 @@ static inline void process_impurecord(impurecord_t *_r)
 				LM_DBG("Contact: <%.*s> has been deleted - unlinking from "
 					   "IMPU\n",
 						ptr->c.len, ptr->c.s);
+				/* fire the same callbacks as the pending-notify path, so SER is sent */
+				if (exists_ulcb_type(_r->cbs, UL_IMPU_EXPIRE_CONTACT)) {
+					run_ul_callbacks(_r->cbs, UL_IMPU_EXPIRE_CONTACT, _r, ptr);
+				}
+				if (exists_ulcb_type(_r->cbs, UL_IMPU_UNREG_EXPIRED)) {
+					run_ul_callbacks(_r->cbs, UL_IMPU_UNREG_EXPIRED, _r, ptr);
+				}
 				contacts_to_expire[num_contacts_to_expire] = ptr;
 				num_contacts_to_expire++;
 			} else if(ptr->state == CONTACT_EXPIRE_PENDING_NOTIFY) {
